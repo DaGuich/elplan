@@ -11,6 +11,7 @@ from app.models.organization import (
     Team,
     TeamMember,
 )
+from app.models.project import Project
 from app.models.user import User
 from app.schemas.organization import (
     MemberAdd,
@@ -188,7 +189,13 @@ def delete_team(
     org_id: int, team_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
     require_org_admin(db, org_id, user)
-    db.delete(get_team(db, org_id, team_id))
+    team = get_team(db, org_id, team_id)
+    if db.scalar(select(Project.id).where(Project.team_id == team.id)) is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Team has projects; reassign or delete them before deleting the team",
+        )
+    db.delete(team)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

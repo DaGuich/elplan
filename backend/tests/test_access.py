@@ -84,6 +84,26 @@ def test_team_visibility(world):
     assert client.delete(f"/api/v1/projects/{p['id']}", headers=bob["h"]).status_code == 204
 
 
+def test_team_with_projects_cannot_be_deleted(world):
+    alice, bob, _, org = world
+    team = client.post(
+        f"/api/v1/organizations/{org['id']}/teams", json={"name": "Core"}, headers=alice["h"]
+    ).json()
+    project = client.post(
+        "/api/v1/projects",
+        json={"organization_id": org["id"], "name": "T", "team_id": team["id"]},
+        headers=alice["h"],
+    ).json()
+
+    r = client.delete(f"/api/v1/organizations/{org['id']}/teams/{team['id']}", headers=alice["h"])
+
+    assert r.status_code == 409
+    assert client.get(f"/api/v1/projects/{project['id']}", headers=bob["h"]).status_code == 404
+    assert client.delete(f"/api/v1/projects/{project['id']}", headers=alice["h"]).status_code == 204
+    r = client.delete(f"/api/v1/organizations/{org['id']}/teams/{team['id']}", headers=alice["h"])
+    assert r.status_code == 204
+
+
 def test_last_owner_protected(world):
     alice, _, _, org = world
     r = client.delete(f"/api/v1/organizations/{org['id']}/members/{alice['id']}", headers=alice["h"])
