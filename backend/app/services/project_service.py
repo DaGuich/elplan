@@ -1,6 +1,6 @@
 from fastapi import HTTPException, status
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.organization import Membership, TeamMember
 from app.models.project import Building, Floor, Project
@@ -50,6 +50,7 @@ def list_buildings(db: Session, project: Project) -> list[Building]:
     return list(
         db.scalars(
             select(Building)
+            .options(selectinload(Building.floors))
             .where(Building.project_id == project.id)
             .order_by(Building.id)
         )
