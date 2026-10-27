@@ -4,11 +4,19 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
-from app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
+from app.schemas.project import (
+    BuildingCreate,
+    BuildingRead,
+    ProjectCreate,
+    ProjectRead,
+    ProjectUpdate,
+)
 from app.services.access import require_project_access
 from app.services.project_service import (
+    create_building,
     create_project,
     delete_project,
+    list_buildings,
     list_projects,
     update_project,
 )
@@ -37,6 +45,29 @@ def get_project(
     project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
     return require_project_access(db, project_id, user)
+
+
+@router.get("/{project_id}/buildings", response_model=list[BuildingRead])
+def get_buildings(
+    project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
+    project = require_project_access(db, project_id, user)
+    return list_buildings(db, project)
+
+
+@router.post(
+    "/{project_id}/buildings",
+    response_model=BuildingRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def post_building(
+    project_id: int,
+    payload: BuildingCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    project = require_project_access(db, project_id, user)
+    return create_building(db, project, payload)
 
 
 @router.patch("/{project_id}", response_model=ProjectRead)
