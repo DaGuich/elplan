@@ -52,6 +52,37 @@ def test_org_visibility(world):
     )
 
 
+def test_building_requires_floors_and_obeys_project_access(world):
+    alice, _, eve, org = world
+    project = client.post(
+        "/api/v1/projects",
+        json={"organization_id": org["id"], "name": "Office"},
+        headers=alice["h"],
+    ).json()
+    url = f"/api/v1/projects/{project['id']}/buildings"
+
+    empty = client.post(url, json={"name": "Main", "floors": []}, headers=alice["h"])
+    assert empty.status_code == 422
+
+    created = client.post(
+        url,
+        json={"name": "Main", "floors": [{"name": "Ground floor"}, {"name": "First floor"}]},
+        headers=alice["h"],
+    )
+    assert created.status_code == 201, created.text
+    building = created.json()
+    assert building["name"] == "Main"
+    assert [floor["name"] for floor in building["floors"]] == ["Ground floor", "First floor"]
+    assert [floor["sort_order"] for floor in building["floors"]] == [0, 1]
+    assert [row["id"] for row in client.get(url, headers=alice["h"]).json()] == [building["id"]]
+    assert client.get(url, headers=eve["h"]).status_code == 404
+    assert client.post(
+        url,
+        json={"name": "No access", "floors": [{"name": "Ground floor"}]},
+        headers=eve["h"],
+    ).status_code == 404
+
+
 def test_team_visibility(world):
     alice, bob, eve, org = world
     team = client.post(

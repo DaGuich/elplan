@@ -21,3 +21,26 @@ class ProjectRead(BaseModel):
     team_id: int | None = None
     name: str
     description: str | None = None
+
+
+class FloorCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+class FloorRead(FloorCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    sort_order: int
+
+
+class BuildingCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    floors: list[FloorCreate] = Field(min_length=1, max_length=100)
+
+
+class BuildingRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    project_id: int
+    name: str
+    floors: list[FloorRead]

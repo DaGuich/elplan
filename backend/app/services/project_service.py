@@ -1,11 +1,11 @@
 from fastapi import HTTPException, status
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models.organization import Membership, TeamMember
-from app.models.project import Project
+from app.models.project import Building, Floor, Project
 from app.models.user import User
-from app.schemas.project import ProjectCreate, ProjectUpdate
+from app.schemas.project import BuildingCreate, ProjectCreate, ProjectUpdate
 from app.services.access import get_team, is_team_member, require_member
 
 
@@ -44,6 +44,32 @@ def create_project(db: Session, user: User, data: ProjectCreate) -> Project:
     db.commit()
     db.refresh(row)
     return row
+
+
+def list_buildings(db: Session, project: Project) -> list[Building]:
+    return list(
+        db.scalars(
+            select(Building)
+            .options(selectinload(Building.floors))
+            .where(Building.project_id == project.id)
+            .order_by(Building.id)
+        )
+    )
+
+
+def create_building(db: Session, project: Project, data: BuildingCreate) -> Building:
+    building = Building(
+        project_id=project.id,
+        name=data.name,
+        floors=[
+            Floor(name=floor.name, sort_order=position)
+            for position, floor in enumerate(data.floors)
+        ],
+    )
+    db.add(building)
+    db.commit()
+    db.refresh(building)
+    return building
 
 
 def update_project(db: Session, user: User, project: Project, data: ProjectUpdate) -> Project:
