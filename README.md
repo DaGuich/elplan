@@ -14,7 +14,8 @@ Electrical planning platform combining:
 ## Quick start (Docker)
 
 ```bash
-docker compose up --build
+docker compose up --build                              # production (compiled frontend)
+docker compose -f docker-compose.dev.yml up --build    # development (hot reload)
 ```
 
 Open: http://localhost:8080
@@ -29,3 +30,12 @@ Open: http://localhost:8080
 - `frontend/` React + TypeScript app
 - `proxy/` Nginx reverse proxy config
 - `postgres/` DB bootstrap scripts
+
+## Database migrations (Alembic)
+
+Migrations run automatically on backend start (`alembic upgrade head`). Manually (from `backend/`):
+
+```bash
+alembic revision --autogenerate -m "describe change"
+alembic upgrade head
+```
