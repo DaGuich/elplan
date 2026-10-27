@@ -4,8 +4,10 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir uv
 COPY pyproject.toml /app/pyproject.toml
-RUN uv pip install --system fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" alembic pydantic pydantic-settings python-multipart
+RUN uv pip install --system fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" alembic pydantic pydantic-settings python-multipart pyjwt "email-validator" httpx
 
 COPY . /app
 
 EXPOSE 8000
+
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]
