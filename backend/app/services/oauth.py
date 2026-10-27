@@ -129,16 +129,13 @@ def resolve_user(db: Session, info: dict) -> User:
     email = (info.get("email") or "").strip().lower()
     if not email:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Provider did not return an email address")
-    verified = info.get("email_verified") is True or settings.OAUTH_TRUST_EMAIL
 
     user = db.scalar(select(User).where(func.lower(User.email) == email))
     if user is not None:
-        if not verified:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN, "Email is not verified by the provider; cannot link account"
-            )
-        if not user.is_active:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Account disabled")
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Email already registered; sign in with the existing account",
+        )
     else:
         name = info.get("name") or info.get("preferred_username") or email
         user = User(email=email, name=str(name)[:200], password_hash=UNUSABLE_PASSWORD)

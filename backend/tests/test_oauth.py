@@ -52,10 +52,12 @@ def test_state_mismatch_rejected(provider):
     assert finish("wrong").startswith("error=")
 
 
-def test_unverified_email_does_not_link(provider):
+def test_existing_local_account_is_never_auto_linked(provider):
     email = f"loc-{uuid.uuid4().hex[:8]}@example.com"
     client.post("/api/v1/auth/register", json={"email": email, "name": "L", "password": "password123"})
     provider["info"] = {"sub": uuid.uuid4().hex, "email": email, "email_verified": False}
     assert finish(start_login()).startswith("error=")
     provider["info"]["email_verified"] = True
-    assert finish(start_login()).startswith("token=")
+    assert finish(start_login()).startswith("error=")
+    login = client.post("/api/v1/auth/login", json={"email": email, "password": "password123"})
+    assert login.status_code == 200
