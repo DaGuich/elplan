@@ -34,7 +34,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return <p>Loading...</p>;
   }
   if (me.isError || !me.data) {
-    return <LoginForm onDone={() => setHasToken(true)} />;
+    return (
+      <LoginForm
+        onDone={() => {
+          setHasToken(true);
+          void me.refetch();
+        }}
+      />
+    );
   }
 
   return (
