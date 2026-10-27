@@ -11,10 +11,6 @@ export function ProjectForm() {
   const activeOrg = orgId ?? orgs[0]?.id;
   const { data: teams = [] } = useTeams(activeOrg);
 
-  if (orgs.length === 0) {
-    return <p>Create an organization first to add projects.</p>;
-  }
-
   const form = useForm({
     defaultValues: {
       name: "",
@@ -25,6 +21,10 @@ export function ProjectForm() {
       form.reset();
     },
   });
+
+  if (orgs.length === 0) {
+    return <p>Create an organization first to add projects.</p>;
+  }
 
   return (
     <form
