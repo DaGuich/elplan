@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "elplan"
     ENV: str = "dev"
     DATABASE_URL: str = "postgresql+psycopg://elplan:elplan@localhost:5432/elplan"
+    SECRET_KEY: str = "dev-insecure-change-me-0123456789abcdef"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 12
     CORS_ORIGINS: str = "http://localhost:8080"
 
 

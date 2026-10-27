@@ -24,6 +24,7 @@ services:
     restart: unless-stopped
     environment:
       ENV: production
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY (e.g. openssl rand -hex 32)}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-elplan}:${POSTGRES_PASSWORD:-elplan}@db:5432/${POSTGRES_DB:-elplan}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
     depends_on:

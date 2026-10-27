@@ -39,3 +39,11 @@ Migrations run automatically on backend start (`alembic upgrade head`). Manually
 alembic revision --autogenerate -m "describe change"
 alembic upgrade head
 ```
+
+## Users, organizations and teams
+
+- Register/log in in the UI (JWT bearer auth). Production requires `SECRET_KEY` (e.g. `SECRET_KEY=$(openssl rand -hex 32) docker compose up --build`).
+- Projects belong to an organization and are visible only to its members.
+- Organization roles: `owner`, `admin` (manage members and teams), `member`.
+- A project may be assigned to a team; it is then visible/editable/deletable only by team members. Project-related items must use `require_project_access` (`backend/app/services/access.py`).
+- Upgrading: migration `0002` deletes pre-existing projects (they have no organization).
