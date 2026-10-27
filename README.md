@@ -47,3 +47,20 @@ alembic upgrade head
 - Organization roles: `owner`, `admin` (manage members and teams), `member`.
 - A project may be assigned to a team; it is then visible/editable/deletable only by team members. Project-related items must use `require_project_access` (`backend/app/services/access.py`).
 - Upgrading: migration `0002` deletes pre-existing projects (they have no organization).
+
+## OAuth2 / OIDC login (e.g. Authentik)
+
+The backend performs the authorization-code flow (with PKCE) itself and exchanges the code with the provider server-side (back-channel). Configure it only via environment variables (put them in a `.env` file next to the compose file, or export them):
+
+| Variable | Description |
+|---|---|
+| `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET` | Client credentials; OAuth login is enabled when the ID is set |
+| `OAUTH_DISCOVERY_URL` | OIDC discovery URL, e.g. `https://authentik.example.com/application/o/elplan/.well-known/openid-configuration` |
+| `OAUTH_AUTHORIZE_URL`, `OAUTH_TOKEN_URL`, `OAUTH_USERINFO_URL` | Explicit endpoints (instead of / overriding discovery) |
+| `OAUTH_SCOPES` | Default `openid email profile` |
+| `OAUTH_REDIRECT_URI` | Register this at the provider; default `http://localhost:8080/api/v1/auth/oauth/callback` |
+| `OAUTH_PROVIDER_NAME` | Label of the login button |
+| `OAUTH_TRUST_EMAIL` | Link to existing local accounts by email even if the provider doesn't mark it verified (default `false`) |
+| `FRONTEND_URL` | Where the browser returns after login |
+
+Users are identified by (issuer, `sub`); unknown users are created on first login.

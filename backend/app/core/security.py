@@ -10,6 +10,9 @@ from app.core.config import settings
 
 _N, _R, _P = 2**14, 8, 1
 
+# Never matches verify_password: accounts created via OAuth have no local password.
+UNUSABLE_PASSWORD = "!"
+
 
 def hash_password(password: str) -> str:
     salt = os.urandom(16)
@@ -38,6 +41,25 @@ def create_access_token(user_id: int) -> str:
 def decode_access_token(token: str) -> int | None:
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        if "typ" in payload:
+            return None
         return int(payload["sub"])
     except (jwt.PyJWTError, KeyError, ValueError):
         return None
+
+
+def create_state_token(state: str, verifier: str) -> str:
+    exp = datetime.now(timezone.utc) + timedelta(minutes=10)
+    return jwt.encode(
+        {"state": state, "verifier": verifier, "typ": "oauth_state", "exp": exp},
+        settings.SECRET_KEY,
+        algorithm="HS256",
+    )
+
+
+def decode_state_token(token: str) -> dict | None:
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+    except jwt.PyJWTError:
+        return None
+    return payload if payload.get("typ") == "oauth_state" else None

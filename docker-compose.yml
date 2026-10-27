@@ -26,6 +26,17 @@ services:
       ENV: production
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY (e.g. openssl rand -hex 32)}
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-elplan}:${POSTGRES_PASSWORD:-elplan}@db:5432/${POSTGRES_DB:-elplan}
+      OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID:-}
+      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET:-}
+      OAUTH_DISCOVERY_URL: ${OAUTH_DISCOVERY_URL:-}
+      OAUTH_AUTHORIZE_URL: ${OAUTH_AUTHORIZE_URL:-}
+      OAUTH_TOKEN_URL: ${OAUTH_TOKEN_URL:-}
+      OAUTH_USERINFO_URL: ${OAUTH_USERINFO_URL:-}
+      OAUTH_SCOPES: ${OAUTH_SCOPES:-openid email profile}
+      OAUTH_REDIRECT_URI: ${OAUTH_REDIRECT_URI:-http://localhost:8080/api/v1/auth/oauth/callback}
+      OAUTH_PROVIDER_NAME: ${OAUTH_PROVIDER_NAME:-SSO}
+      OAUTH_TRUST_EMAIL: ${OAUTH_TRUST_EMAIL:-false}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
     depends_on:
       db:

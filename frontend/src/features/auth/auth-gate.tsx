@@ -6,7 +6,16 @@ import { authApi } from "./api";
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
-  const [hasToken, setHasToken] = useState(!!tokenStore.get());
+  const [hasToken, setHasToken] = useState(() => {
+    // The OAuth callback redirects back with the app token in the URL fragment.
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const token = params.get("token");
+    if (token) {
+      tokenStore.set(token);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    return !!tokenStore.get();
+  });
   const me = useQuery({ queryKey: ["me"], queryFn: authApi.me, enabled: hasToken, retry: false });
 
   useEffect(() => {
@@ -51,7 +60,14 @@ function LoginForm({ onDone }: { onDone: () => void }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => {
+    const err = new URLSearchParams(window.location.hash.replace(/^#/, "")).get("error");
+    if (err) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    return err ? `Login failed: ${err}` : null;
+  });
+  const config = useQuery({ queryKey: ["auth-config"], queryFn: authApi.config });
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -85,6 +101,11 @@ function LoginForm({ onDone }: { onDone: () => void }) {
       />
       {error && <p style={{ color: "crimson" }}>{error}</p>}
       <button type="submit">{mode === "login" ? "Log in" : "Register"}</button>
+      {config.data?.oauth_enabled && (
+        <a href="/api/v1/auth/oauth/login">
+          <button type="button">Log in with {config.data.oauth_provider_name}</button>
+        </a>
+      )}
       <button type="button" onClick={() => setMode(mode === "login" ? "register" : "login")}>
         {mode === "login" ? "Create an account" : "I already have an account"}
       </button>
