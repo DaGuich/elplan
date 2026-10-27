@@ -39,6 +39,10 @@ def _owner_count(db: Session, org_id: int) -> int:
     )
 
 
+def _lock_organization(db: Session, org_id: int) -> None:
+    db.scalar(select(Organization.id).where(Organization.id == org_id).with_for_update())
+
+
 @router.get("", response_model=list[OrganizationRead])
 def list_organizations(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     rows = db.execute(
@@ -115,6 +119,7 @@ def update_member(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _lock_organization(db, org_id)
     actor = require_org_admin(db, org_id, user)
     m = get_membership(db, org_id, user_id)
     if m is None:
@@ -132,6 +137,7 @@ def update_member(
 def remove_member(
     org_id: int, user_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ):
+    _lock_organization(db, org_id)
     # Members may leave on their own; otherwise admin rights are needed.
     actor = require_member(db, org_id, user) if user_id == user.id else require_org_admin(db, org_id, user)
     m = get_membership(db, org_id, user_id)
