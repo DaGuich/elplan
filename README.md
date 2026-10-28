@@ -42,7 +42,7 @@ alembic upgrade head
 
 ## Users, organizations and teams
 
-- Register/log in in the UI (JWT bearer auth). Production requires `SECRET_KEY` (e.g. `SECRET_KEY=$(openssl rand -hex 32) docker compose up --build`).
+- Sign in exclusively through the configured identity provider (JWT bearer auth). Password-based login and registration are disabled. Production requires `SECRET_KEY` (e.g. `SECRET_KEY=$(openssl rand -hex 32) docker compose up --build`).
 - Projects belong to an organization and are visible only to its members.
 - Organization roles: `owner`, `admin` (manage members and teams), `member`.
 - A project may be assigned to a team; it is then visible/editable/deletable only by team members. Project-related items must use `require_project_access` (`backend/app/services/access.py`).
@@ -58,7 +58,7 @@ Projects can be duplicated, archived, imported/exported as JSON, and transferred
 
 The backend performs the authorization-code flow (with PKCE) itself and exchanges the code with the provider server-side (back-channel). Configure it only via environment variables (put them in a `.env` file next to the compose file, or export them):
 
-OAuth is optional and its login button is shown only when `OAUTH_CLIENT_ID` is set. Register the exact `OAUTH_REDIRECT_URI` with your identity provider, configure the client credentials and discovery URL in the compose-level `.env`, then restart the backend. Without a configured provider, use the built-in email/password login.
+Identity-provider login is required. Register the exact `OAUTH_REDIRECT_URI` with your provider, configure the client credentials and discovery URL in the compose-level `.env`, then restart the backend. Without a configured provider, users cannot sign in.
 
 | Variable | Description |
 |---|---|
@@ -71,4 +71,4 @@ OAuth is optional and its login button is shown only when `OAUTH_CLIENT_ID` is s
 | `OAUTH_TRUST_EMAIL` | Link to existing local accounts by email even if the provider doesn't mark it verified (default `false`) |
 | `FRONTEND_URL` | Where the browser returns after login |
 
-Users are identified by (issuer, `sub`); unknown users are created on first login. Existing password accounts are not automatically linked by default; set `OAUTH_TRUST_EMAIL=true` only for a provider you trust to assert email ownership. Otherwise, sign in with the existing account locally to avoid account takeover through an unverified email claim.
+Users are identified by (issuer, `sub`); unknown users are created on first login. Existing accounts are not automatically linked by default; set `OAUTH_TRUST_EMAIL=true` only for a provider you trust to assert email ownership. Password login and registration API endpoints are disabled; existing users must authenticate through the identity provider.

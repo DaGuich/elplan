@@ -2,7 +2,10 @@
 import uuid
 
 import pytest
+from app.core.db import SessionLocal
+from app.core.security import UNUSABLE_PASSWORD, create_access_token
 from app.main import app
+from app.models.user import User
 from fastapi.testclient import TestClient
 
 client = TestClient(app)
@@ -10,12 +13,16 @@ client = TestClient(app)
 
 def make_user(name):
     email = f"{name}-{uuid.uuid4().hex[:8]}@example.com"
-    r = client.post("/api/v1/auth/register", json={"email": email, "name": name, "password": "password123"})
-    assert r.status_code == 201, r.text
-    token = client.post("/api/v1/auth/login", json={"email": email, "password": "password123"}).json()[
-        "access_token"
-    ]
-    return {"id": r.json()["id"], "email": email, "h": {"Authorization": f"Bearer {token}"}}
+    with SessionLocal() as db:
+        user = User(email=email, name=name, password_hash=UNUSABLE_PASSWORD)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return {
+            "id": user.id,
+            "email": email,
+            "h": {"Authorization": f"Bearer {create_access_token(user.id)}"},
+        }
 
 
 @pytest.fixture()
