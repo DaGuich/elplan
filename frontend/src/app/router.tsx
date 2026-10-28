@@ -4,8 +4,10 @@ import { OrganizationsPage } from "../features/organizations/routes/organization
 import { ProjectsListPage } from "../features/projects/routes/projects-list";
 import { ProjectDetailPage } from "../features/projects/routes/project-detail";
 import { PublicSharePage } from "../features/projects/routes/public-share";
+import { LanguageSelect, useI18n } from "../i18n";
 
 function RootLayout() {
+  const { t } = useI18n();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   if (pathname.startsWith("/share/")) return <Outlet />;
   return (
@@ -13,10 +15,13 @@ function RootLayout() {
       <AuthGate>
         <header className="app-header">
           <Link to="/" className="app-brand">el<span>plan</span></Link>
-          <nav className="app-nav">
-            <Link to="/">Projects</Link>
-            <Link to="/organizations">Organizations</Link>
-          </nav>
+          <div className="flex items-center gap-4">
+            <nav className="app-nav">
+              <Link to="/">{t("Projects")}</Link>
+              <Link to="/organizations">{t("Organizations")}</Link>
+            </nav>
+            <LanguageSelect />
+          </div>
         </header>
         <div className="page-container"><Outlet /></div>
       </AuthGate>

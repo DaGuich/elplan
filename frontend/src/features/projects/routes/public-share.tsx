@@ -3,8 +3,10 @@ import { useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { FloorPlanData, SharedProject, projectsApi } from "../api";
+import { LanguageSelect, useI18n } from "../../../i18n";
 
 function SharedFloor({ floor }: { floor: SharedProject["buildings"][number]["floors"][number] }) {
+  const { t } = useI18n();
   const plan = floor.plan_data;
   return (
     <article className="shared-floor">
@@ -34,12 +36,13 @@ function SharedFloor({ floor }: { floor: SharedProject["buildings"][number]["flo
           </g>
         ))}
       </svg>
-      <p>{plan.rooms.length} rooms · {plan.placements.length} installation points</p>
+      <p>{plan.rooms.length} {t("rooms")} · {plan.placements.length} {t("installation points")}</p>
     </article>
   );
 }
 
 export function PublicSharePage() {
+  const { t } = useI18n();
   const { token } = useParams({ from: "/share/$token" });
   const [password, setPassword] = useState("");
   const [submitted, setSubmitted] = useState(false);
@@ -60,15 +63,16 @@ export function PublicSharePage() {
 
   return (
     <main className="public-share-page">
-      {query.isLoading && <p className="editor-status">Loading shared project…</p>}
+      <div className="flex justify-end"><LanguageSelect /></div>
+      {query.isLoading && <p className="editor-status">{t("Loading shared project…")}</p>}
       {query.isError && (
         <section className="public-share-gate">
-          <h1>Shared electrical plan</h1>
-          <p>{passwordRequired ? "This project is password protected." : "This share link is unavailable or has expired."}</p>
+          <h1>{t("Shared electrical plan")}</h1>
+          <p>{passwordRequired ? t("This project is password protected.") : t("This share link is unavailable or has expired.")}</p>
           {passwordRequired && (
             <form onSubmit={submitPassword}>
-              <label>Password<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
-              <button className="button-primary" type="submit">Open shared project</button>
+              <label>{t("Password")}<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+              <button className="button-primary" type="submit">{t("Open shared project")}</button>
             </form>
           )}
         </section>
@@ -76,7 +80,7 @@ export function PublicSharePage() {
       {project && (
         <>
           <header className="public-share-header">
-            <p className="eyebrow">ELPLAN · CLIENT VIEW</p>
+            <p className="eyebrow">{t("ELPLAN · CLIENT VIEW")}</p>
             <h1>{project.name}</h1>
             {project.description && <p>{project.description}</p>}
           </header>

@@ -19,6 +19,7 @@ import { useFloorPlan, useSaveFloorPlan } from "../queries";
 import { CabinetEditor } from "./cabinet-editor";
 import { DocumentationPanel } from "./documentation-panel";
 import { SmartSystemsEditor } from "./smart-systems-editor";
+import { useI18n } from "../../../i18n";
 
 type Props = {
   projectId: number;
@@ -108,6 +109,7 @@ function dxfSafe(value: string) {
 }
 
 export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: Props) {
+  const { t } = useI18n();
   const query = useFloorPlan(projectId, floorId);
   const save = useSaveFloorPlan(projectId, floorId);
   const [data, setData] = useState<FloorPlanData>(emptyFloorPlan);
@@ -161,11 +163,11 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
 
   function update(patch: Partial<FloorPlanData>) {
     setData((current) => ({ ...current, ...patch }));
-    setFeedback("Unsaved changes");
+    setFeedback(t("Unsaved changes"));
   }
 
   function addRoom(
-    name = "Room",
+    name = t("Room"),
     templatePoints: { kind: PlanPlacement["kind"]; label: string; dx: number; dy: number }[] = []
   ) {
     const room: RoomPlanItem = {
@@ -207,7 +209,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
     const point: PlanPlacement = {
       id: newId(),
       kind,
-      label: label?.trim() || symbolKinds.find((item) => item.kind === kind)?.label || "Device",
+      label: label?.trim() || symbolKinds.find((item) => item.kind === kind)?.label || t("Device"),
       x: 500,
       y: 350,
       rotation: 0,
@@ -273,7 +275,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
     if (tool === "room") {
       const room: RoomPlanItem = {
         id: newId(),
-        name: "Room",
+        name: t("Room"),
         x: clamp(point.x - 90, 0, 820),
         y: clamp(point.y - 57, 0, 585),
         width: 180,
@@ -290,18 +292,18 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
     if (tool === "scale") {
       if (!calibrationStart) {
         setCalibrationStart(point);
-        setFeedback("Click the end of a known distance on the plan.");
+        setFeedback(t("Click the end of a known distance on the plan."));
       } else {
         setCalibrationEnd(point);
         setTool("select");
-        setFeedback("Enter the real-world distance, then apply the calibration.");
+        setFeedback(t("Enter the real-world distance, then apply the calibration."));
       }
       return;
     }
     if (tool === "dimension") {
       if (!measurementStart) {
         setMeasurementStart(point);
-        setFeedback("Click the end point of the dimension.");
+        setFeedback(t("Click the end point of the dimension."));
       } else {
         const distanceUnits = Math.hypot(point.x - measurementStart.x, point.y - measurementStart.y);
         const realLength = data.scale_m_per_100_units
@@ -417,7 +419,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
 
   function groupSelectedPlacements() {
     if (selectedPlacements.length < 2) {
-      setFeedback("Select at least two installation points to create a mounting group.");
+      setFeedback(t("Select at least two installation points to create a mounting group."));
       return;
     }
     const mountingPoint: MountingPoint = {
@@ -440,13 +442,13 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
         ? { ...item, mounting_point_id: mountingPoint.id }
         : item),
     });
-    setFeedback("Mounting group created.");
+    setFeedback(t("Mounting group created."));
   }
 
   function saveCustomComponent() {
     const name = customLabel.trim();
     if (!name) {
-      setFeedback("Enter a name for the custom symbol.");
+      setFeedback(t("Enter a name for the custom symbol."));
       return;
     }
     const component: CustomComponent = {
@@ -460,7 +462,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
     };
     update({ custom_components: [...data.custom_components, component] });
     setSelectedCustomComponentId(component.id);
-    setFeedback("Custom symbol saved to the library.");
+    setFeedback(t("Custom symbol saved to the library."));
   }
 
   function rotateSelection(degrees: number) {
@@ -503,7 +505,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
   }
 
   function addFreeNote() {
-    const label = window.prompt("Plan note", "Note");
+    const label = window.prompt(t("Plan note"), t("Note"));
     if (label === null || !label.trim()) return;
     const note = {
       id: newId(),
@@ -519,7 +521,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
 
   async function detectRoomRegions() {
     if (!data.background_image) {
-      setFeedback("Import a floor-plan image before detecting rooms.");
+      setFeedback(t("Import a floor-plan image before detecting rooms."));
       return;
     }
     try {
@@ -527,7 +529,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
       image.src = data.background_image;
       await new Promise<void>((resolve, reject) => {
         image.onload = () => resolve();
-        image.onerror = () => reject(new Error("Could not decode floor-plan image."));
+        image.onerror = () => reject(new Error(t("Could not decode floor-plan image.")));
       });
       const canvas = window.document.createElement("canvas");
       const width = 100;
@@ -535,7 +537,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
       canvas.width = width;
       canvas.height = height;
       const context = canvas.getContext("2d", { willReadFrequently: true });
-      if (!context) throw new Error("Could not analyze floor-plan image.");
+      if (!context) throw new Error(t("Could not analyze floor-plan image."));
       context.drawImage(image, 0, 0, width, height);
       const pixels = context.getImageData(0, 0, width, height).data;
       const visited = new Uint8Array(width * height);
@@ -591,7 +593,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
         ))
         .slice(0, 30);
       if (regions.length === 0) {
-        setFeedback("No enclosed room areas found. Add rooms manually or try a clearer plan.");
+        setFeedback(t("No enclosed room areas found. Add rooms manually or try a clearer plan."));
         return;
       }
       const rooms: RoomPlanItem[] = regions.map((region, index) => ({
@@ -608,7 +610,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
       setDetectedRooms(true);
       setFeedback(`${rooms.length} room region${rooms.length === 1 ? "" : "s"} detected. Review and rename them.`);
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : "Could not detect room regions.");
+      setFeedback(error instanceof Error ? error.message : t("Could not detect room regions."));
     }
   }
 
@@ -619,10 +621,10 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     const context = canvas.getContext("2d");
-    if (!context) throw new Error("Could not create a PDF rendering context.");
+    if (!context) throw new Error(t("Could not create a PDF rendering context."));
     await page.render({ canvas, canvasContext: context, viewport }).promise;
     const image = canvas.toDataURL("image/jpeg", 0.88);
-    if (image.length > 4_000_000) throw new Error("Rendered plan page is too large to save.");
+    if (image.length > 4_000_000) throw new Error(t("Rendered plan page is too large to save."));
     update({ background_image: image });
     setFeedback(`PDF page ${pageNumber} imported. Save to store it with this floor.`);
   }
@@ -633,7 +635,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
     if (!file) return;
     if (file.type === "application/pdf") {
       if (file.size > 10_000_000) {
-        setFeedback("Floor-plan PDFs must be 10 MB or smaller.");
+        setFeedback(t("Floor-plan PDFs must be 10 MB or smaller."));
         return;
       }
       try {
@@ -643,16 +645,16 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
         setPdfPage(1);
         await renderPdfPage(pdf, 1);
       } catch (error) {
-        setFeedback(error instanceof Error ? `Could not import PDF: ${error.message}` : "Could not import PDF.");
+        setFeedback(error instanceof Error ? `${t("Could not import PDF")}: ${error.message}` : t("Could not import PDF."));
       }
       return;
     }
     if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-      setFeedback("Choose a PDF, PNG, JPEG, or WebP floor-plan file.");
+      setFeedback(t("Choose a PDF, PNG, JPEG, or WebP floor-plan file."));
       return;
     }
     if (file.size > 2_500_000) {
-      setFeedback("Floor-plan images must be 2.5 MB or smaller.");
+      setFeedback(t("Floor-plan images must be 2.5 MB or smaller."));
       return;
     }
     const reader = new FileReader();
@@ -661,10 +663,10 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
         update({ background_image: reader.result });
         setPdfDocument(null);
         setPdfPageCount(0);
-        setFeedback("Floor-plan image added. Save to store it with this floor.");
+        setFeedback(t("Floor-plan image added. Save to store it with this floor."));
       }
     };
-    reader.onerror = () => setFeedback("Could not read the selected image.");
+    reader.onerror = () => setFeedback(t("Could not read the selected image."));
     reader.readAsDataURL(file);
   }
 
@@ -684,7 +686,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
   function addCircuit(rcdId: string) {
     const circuit: ElectricalCircuit = {
       id: newId(),
-      name: "Final circuit",
+      name: t("Final circuit"),
       rcd_id: rcdId,
       breaker_type: "B",
       rated_current_a: 16,
@@ -713,7 +715,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
     const component: ElectricalComponent = {
       id: newId(),
       kind,
-      name: `${labels[kind]} ${data.electrical_components.filter((item) => item.kind === kind).length + 1}`,
+      name: `${t(labels[kind])} ${data.electrical_components.filter((item) => item.kind === kind).length + 1}`,
       reference: null,
       rated_current_a: kind === "main_switch" ? 63 : null,
       poles: kind === "relay" || kind === "terminal" ? 2 : 4,
@@ -731,13 +733,13 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
   function generateTerminalStrip(rcdId: string) {
     const circuits = data.circuits.filter((item) => item.rcd_id === rcdId);
     if (circuits.length === 0) {
-      setFeedback("Add outgoing circuits before generating their terminal strip.");
+      setFeedback(t("Add outgoing circuits before generating their terminal strip."));
       return;
     }
     const rcdIndex = data.rcds.findIndex((item) => item.id === rcdId) + 1;
     const strip: TerminalStrip = {
       id: newId(),
-      name: `Terminal strip X${rcdIndex}`,
+      name: `${t("Terminal strip")} X${rcdIndex}`,
       kind: "internal",
       circuit_ids: circuits.map((item) => item.id),
       terminals_per_circuit: 3,
@@ -754,14 +756,14 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
     const meters = Number(calibrationMeters);
     const scale = meters / (distance / 100);
     if (!Number.isFinite(meters) || meters <= 0 || distance === 0 || !Number.isFinite(scale) || scale > 1000) {
-      setFeedback("Enter a positive distance greater than zero.");
+      setFeedback(t("Enter a positive distance greater than zero."));
       return;
     }
     update({ scale_m_per_100_units: scale });
     setCalibrationStart(null);
     setCalibrationEnd(null);
     setCalibrationMeters("");
-    setFeedback("Scale calibrated. Save to store this measurement.");
+    setFeedback(t("Scale calibrated. Save to store this measurement."));
   }
 
   function updateCircuit(id: string, patch: Partial<ElectricalCircuit>) {
@@ -858,7 +860,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
       rooms: data.rooms.filter((item) => selectedIds.includes(item.id)),
       placements: data.placements.filter((item) => selectedIds.includes(item.id)),
     });
-    setFeedback("Selection copied.");
+    setFeedback(t("Selection copied."));
   }
 
   function pasteSelection() {
@@ -894,7 +896,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
     setSelectedIds([...rooms.map((item) => item.id), ...placements.map((item) => item.id)]);
     if (placements.length) setSelection({ kind: "placement", id: placements[0].id });
     else if (rooms.length) setSelection({ kind: "room", id: rooms[0].id });
-    if (placementIds.size > 0) setFeedback("Selection duplicated.");
+    if (placementIds.size > 0) setFeedback(t("Selection duplicated."));
   }
 
   function removeSelection() {
@@ -949,12 +951,12 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
 
   function exportMaterials() {
     const rows = [
-      ["Type", "Description", "Quantity"],
+      [t("Type"), t("Description"), t("Quantity")],
       ...symbolKinds
-        .map(({ kind, label }) => [label, label, String(data.placements.filter((item) => item.kind === kind).length)])
+        .map(({ kind, label }) => [t(label), t(label), String(data.placements.filter((item) => item.kind === kind).length)])
         .filter((row) => row[2] !== "0"),
       ...data.rcds.map((rcd, index) => ["RCD", `${rcd.name} (${rcd.rated_current_ma} mA, ${rcd.poles}-pole)`, "1"]),
-      ...data.circuits.map((circuit) => ["Circuit protection", `${circuitNumber(circuit, data.rcds, data.circuits)} ${circuit.breaker_type}${circuit.rated_current_a} - ${circuit.cable}`, "1"]),
+      ...data.circuits.map((circuit) => [t("Circuit protection"), `${circuitNumber(circuit, data.rcds, data.circuits)} ${circuit.breaker_type}${circuit.rated_current_a} - ${circuit.cable}`, "1"]),
     ];
     const csv = rows.map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(";")).join("\r\n");
     const url = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" }));
@@ -1028,73 +1030,73 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
     URL.revokeObjectURL(url);
   }
 
-  if (query.isLoading) return <p className="editor-status">Loading floor workspace…</p>;
-  if (query.isError) return <p className="editor-error">Could not load this floor workspace.</p>;
+  if (query.isLoading) return <p className="editor-status">{t("Loading floor workspace…")}</p>;
+  if (query.isError) return <p className="editor-error">{t("Could not load this floor workspace.")}</p>;
 
   return (
     <section className="workspace">
       <header className="workspace-header">
         <div>
-          <p className="eyebrow">FLOOR WORKSPACE</p>
+          <p className="eyebrow">{t("FLOOR WORKSPACE")}</p>
           <h3>{floorName}</h3>
         </div>
         <div className="workspace-actions">
-          <button type="button" className="button-secondary" onClick={exportDxf}>Export CAD (DXF)</button>
-          <button type="button" className="button-secondary" onClick={exportMaterials}>Export materials CSV</button>
-          <button type="button" className="button-secondary" onClick={() => window.print()}>Print / PDF</button>
+          <button type="button" className="button-secondary" onClick={exportDxf}>{t("Export CAD (DXF)")}</button>
+          <button type="button" className="button-secondary" onClick={exportMaterials}>{t("Export materials CSV")}</button>
+          <button type="button" className="button-secondary" onClick={() => window.print()}>{t("Print / PDF")}</button>
           <button
             type="button"
             className="button-primary"
-            onClick={() => save.mutate(data, { onSuccess: () => setFeedback("All changes saved."), onError: () => setFeedback("Save failed. Your unsaved changes are still here.") })}
+            onClick={() => save.mutate(data, { onSuccess: () => setFeedback(t("All changes saved.")), onError: () => setFeedback(t("Save failed. Your unsaved changes are still here.")) })}
             disabled={save.isPending}
           >
-            {save.isPending ? "Saving…" : "Save workspace"}
+            {save.isPending ? t("Saving…") : t("Save workspace")}
           </button>
         </div>
       </header>
-      <div className="workspace-tabs" role="tablist" aria-label="Floor workspace">
-        <button type="button" role="tab" aria-selected={tab === "layout"} className={tab === "layout" ? "active" : ""} onClick={() => setTab("layout")}>Floor plan</button>
-        <button type="button" role="tab" aria-selected={tab === "circuits"} className={tab === "circuits" ? "active" : ""} onClick={() => setTab("circuits")}>Circuits &amp; board</button>
-        <button type="button" role="tab" aria-selected={tab === "cabinet"} className={tab === "cabinet" ? "active" : ""} onClick={() => setTab("cabinet")}>Cabinet layout</button>
-        <button type="button" role="tab" aria-selected={tab === "smart"} className={tab === "smart" ? "active" : ""} onClick={() => setTab("smart")}>Smart systems</button>
-        <button type="button" role="tab" aria-selected={tab === "documentation"} className={tab === "documentation" ? "active" : ""} onClick={() => setTab("documentation")}>Documentation</button>
+      <div className="workspace-tabs" role="tablist" aria-label={t("Floor workspace")}>
+        <button type="button" role="tab" aria-selected={tab === "layout"} className={tab === "layout" ? "active" : ""} onClick={() => setTab("layout")}>{t("Floor plan")}</button>
+        <button type="button" role="tab" aria-selected={tab === "circuits"} className={tab === "circuits" ? "active" : ""} onClick={() => setTab("circuits")}>{t("Circuits & board")}</button>
+        <button type="button" role="tab" aria-selected={tab === "cabinet"} className={tab === "cabinet" ? "active" : ""} onClick={() => setTab("cabinet")}>{t("Cabinet layout")}</button>
+        <button type="button" role="tab" aria-selected={tab === "smart"} className={tab === "smart" ? "active" : ""} onClick={() => setTab("smart")}>{t("Smart systems")}</button>
+        <button type="button" role="tab" aria-selected={tab === "documentation"} className={tab === "documentation" ? "active" : ""} onClick={() => setTab("documentation")}>{t("Documentation")}</button>
       </div>
       {tab === "layout" ? (
         <div className="plan-layout">
           <aside className="plan-sidebar">
             <label className="upload-button">
-              <span>Upload floor-plan image or PDF</span>
+              <span>{t("Upload floor-plan image or PDF")}</span>
               <input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" onChange={handleFile} />
             </label>
-            <p className="field-hint">PDF up to 10 MB or PNG, JPEG, WebP up to 2.5 MB</p>
+            <p className="field-hint">{t("PDF up to 10 MB or PNG, JPEG, WebP up to 2.5 MB")}</p>
             {pdfDocument && pdfPageCount > 1 && (
-              <label className="field-label">PDF page
+              <label className="field-label">{t("PDF page")}
                 <select value={pdfPage} onChange={(event) => {
                   const page = Number(event.target.value);
                   setPdfPage(page);
                   void renderPdfPage(pdfDocument, page);
                 }}>
-                  {Array.from({ length: pdfPageCount }, (_, index) => <option key={index + 1} value={index + 1}>Page {index + 1}</option>)}
+                  {Array.from({ length: pdfPageCount }, (_, index) => <option key={index + 1} value={index + 1}>{t("Page {{number}}", { number: index + 1 })}</option>)}
                 </select>
               </label>
             )}
-            {data.background_image && <button className="text-button" type="button" onClick={() => update({ background_image: null })}>Remove image</button>}
+            {data.background_image && <button className="text-button" type="button" onClick={() => update({ background_image: null })}>{t("Remove image")}</button>}
             {data.background_image && (
               <>
-                <label className="field-label">Plan opacity
+                <label className="field-label">{t("Plan opacity")}
                   <input type="range" min="0.1" max="1" step="0.05" value={data.background_opacity} onChange={(event) => update({ background_opacity: Number(event.target.value) })} />
                 </label>
-                <label className="field-label">Plan rotation
+                <label className="field-label">{t("Plan rotation")}
                   <select value={data.background_rotation} onChange={(event) => update({ background_rotation: Number(event.target.value) })}>
                     {[0, 90, 180, 270].map((degrees) => <option key={degrees} value={degrees}>{degrees}°</option>)}
                   </select>
                 </label>
                 <button type="button" className="tool" onClick={() => update({ image_crop: data.image_crop ? null : [0.05, 0.05, 0.9, 0.9] })}>
-                  {data.image_crop ? "Reset plan crop" : "Crop plan edges"}
+                  {data.image_crop ? t("Reset plan crop") : t("Crop plan edges")}
                 </button>
                 {data.image_crop && <div className="crop-controls">
                   {data.image_crop.map((value, index) => (
-                    <label className="field-label" key={index}>{["Left", "Top", "Width", "Height"][index]}
+                    <label className="field-label" key={index}>{t(["Left", "Top", "Width", "Height"][index])}
                       <input type="range" min={index < 2 ? 0 : 0.2} max={index === 0 ? 1 - data.image_crop![2] : index === 1 ? 1 - data.image_crop![3] : index === 2 ? 1 - data.image_crop![0] : 1 - data.image_crop![1]} step="0.01" value={value} onChange={(event) => {
                         const crop = [...data.image_crop!] as [number, number, number, number];
                         crop[index] = clamp(Number(event.target.value), index < 2 ? 0 : 0.2, index === 0 ? 1 - crop[2] : index === 1 ? 1 - crop[3] : index === 2 ? 1 - crop[0] : 1 - crop[1]);
@@ -1105,93 +1107,93 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
                 </div>}
               </>
             )}
-            {pdfDocument && <button type="button" className="text-button" onClick={() => { setPdfDocument(null); setPdfPageCount(0); }}>Close PDF page selector</button>}
-            <label className="field-label" htmlFor="plan-scale">Scale (metres per 100 canvas units)</label>
-            <input id="plan-scale" type="number" min="0.01" max="1000" step="0.01" placeholder="Not calibrated" value={data.scale_m_per_100_units ?? ""} onChange={(event) => update({ scale_m_per_100_units: event.target.value ? Number(event.target.value) : null })} />
-            <button type="button" className={tool === "scale" ? "tool active" : "tool"} onClick={() => { setCalibrationStart(null); setCalibrationEnd(null); setTool(tool === "scale" ? "select" : "scale"); setFeedback("Click two points that mark a known distance."); }}>Calibrate from two points</button>
+            {pdfDocument && <button type="button" className="text-button" onClick={() => { setPdfDocument(null); setPdfPageCount(0); }}>{t("Close PDF page selector")}</button>}
+            <label className="field-label" htmlFor="plan-scale">{t("Scale (metres per 100 canvas units)")}</label>
+            <input id="plan-scale" type="number" min="0.01" max="1000" step="0.01" placeholder={t("Not calibrated")} value={data.scale_m_per_100_units ?? ""} onChange={(event) => update({ scale_m_per_100_units: event.target.value ? Number(event.target.value) : null })} />
+            <button type="button" className={tool === "scale" ? "tool active" : "tool"} onClick={() => { setCalibrationStart(null); setCalibrationEnd(null); setTool(tool === "scale" ? "select" : "scale"); setFeedback(t("Click two points that mark a known distance.")); }}>{t("Calibrate from two points")}</button>
             {!isClientPresentation && data.dimensions.map((dimension) => (
               <div className="mounting-point-row" key={dimension.id}>
-                <input aria-label="Dimension label" value={dimension.label} onChange={(event) => update({ dimensions: data.dimensions.map((item) => item.id === dimension.id ? { ...item, label: event.target.value } : item) })} />
-                <button type="button" className="icon-button" aria-label="Delete dimension" onClick={() => update({ dimensions: data.dimensions.filter((item) => item.id !== dimension.id) })}>×</button>
+                <input aria-label={t("Dimension label")} value={dimension.label} onChange={(event) => update({ dimensions: data.dimensions.map((item) => item.id === dimension.id ? { ...item, label: event.target.value } : item) })} />
+                <button type="button" className="icon-button" aria-label={t("Delete dimension")} onClick={() => update({ dimensions: data.dimensions.filter((item) => item.id !== dimension.id) })}>×</button>
               </div>
             ))}
             {calibrationEnd && calibrationStart && (
               <div className="calibration-form">
-                <label className="field-label" htmlFor="calibration-distance">Distance between points (m)</label>
+                <label className="field-label" htmlFor="calibration-distance">{t("Distance between points (m)")}</label>
                 <input id="calibration-distance" type="number" min="0.01" step="0.01" value={calibrationMeters} onChange={(event) => setCalibrationMeters(event.target.value)} />
-                <button type="button" className="button-secondary" onClick={applyScaleCalibration}>Apply calibration</button>
+                <button type="button" className="button-secondary" onClick={applyScaleCalibration}>{t("Apply calibration")}</button>
               </div>
             )}
-            <p className="field-hint">Calibrate against a known wall or dimension on the plan.</p>
+            <p className="field-hint">{t("Calibrate against a known wall or dimension on the plan.")}</p>
             <div className="sidebar-divider" />
-            <p className="field-label">Layers</p>
-            <label className="field-label">Active layer
+            <p className="field-label">{t("Layers")}</p>
+            <label className="field-label">{t("Active layer")}
               <select value={activeLayerId} onChange={(event) => setActiveLayerId(event.target.value)}>
-                {data.layers.map((layer) => <option key={layer.id} value={layer.id}>{layer.name}</option>)}
+                {data.layers.map((layer) => <option key={layer.id} value={layer.id}>{t(layer.name)}</option>)}
               </select>
             </label>
             <div className="layer-list">
               {data.layers.map((layer) => (
                 <label key={layer.id} className="layer-option">
                   <input type="checkbox" checked={layer.visible} onChange={(event) => update({ layers: data.layers.map((item) => item.id === layer.id ? { ...item, visible: event.target.checked } : item) })} />
-                  <input aria-label={`${layer.name} layer name`} value={layer.name} onChange={(event) => update({ layers: data.layers.map((item) => item.id === layer.id ? { ...item, name: event.target.value } : item) })} />
+                  <input aria-label={t("{{name}} layer name", { name: layer.name })} value={layer.name} onChange={(event) => update({ layers: data.layers.map((item) => item.id === layer.id ? { ...item, name: event.target.value } : item) })} />
                 </label>
               ))}
             </div>
             <button type="button" className="text-button" onClick={() => {
               const layer: PlanLayer = {
                 id: newId(),
-                name: `Layer ${data.layers.length + 1}`,
+                name: `${t("Layer")} ${data.layers.length + 1}`,
                 visible: true,
                 color: "#7c5cbd",
                 purpose: "custom",
               };
               update({ layers: [...data.layers, layer] });
               setActiveLayerId(layer.id);
-            }}>＋ Add layer</button>
+            }}>{`＋ ${t("Add layer")}`}</button>
             <label className="layer-option">
               <input type="checkbox" checked={isClientPresentation} onChange={(event) => update({ annotation: { ...data.annotation, presentation_mode: event.target.checked ? "client" : "planning" } })} />
-              Client presentation mode
+              {t("Client presentation mode")}
             </label>
-            <label className="layer-option"><input type="checkbox" checked={showElementIds} onChange={(event) => setShowElementIds(event.target.checked)} />Element IDs</label>
-            <label className="layer-option"><input type="checkbox" checked={showBusAddresses} onChange={(event) => setShowBusAddresses(event.target.checked)} />Bus addresses</label>
-            <label className="layer-option"><input type="checkbox" checked={showCircuitNames} onChange={(event) => setShowCircuitNames(event.target.checked)} />Circuit labels</label>
-            <label className="layer-option"><input type="checkbox" checked={showFuseAssignments} onChange={(event) => setShowFuseAssignments(event.target.checked)} />Fuse references</label>
-            <label className="layer-option"><input type="checkbox" checked={showGroupLabels} onChange={(event) => setShowGroupLabels(event.target.checked)} />Mounting-group labels</label>
-            <label className="layer-option"><input type="checkbox" checked={showRoomOverlays} onChange={(event) => setShowRoomOverlays(event.target.checked)} />Room overlays</label>
+            <label className="layer-option"><input type="checkbox" checked={showElementIds} onChange={(event) => setShowElementIds(event.target.checked)} />{t("Element IDs")}</label>
+            <label className="layer-option"><input type="checkbox" checked={showBusAddresses} onChange={(event) => setShowBusAddresses(event.target.checked)} />{t("Bus addresses")}</label>
+            <label className="layer-option"><input type="checkbox" checked={showCircuitNames} onChange={(event) => setShowCircuitNames(event.target.checked)} />{t("Circuit labels")}</label>
+            <label className="layer-option"><input type="checkbox" checked={showFuseAssignments} onChange={(event) => setShowFuseAssignments(event.target.checked)} />{t("Fuse references")}</label>
+            <label className="layer-option"><input type="checkbox" checked={showGroupLabels} onChange={(event) => setShowGroupLabels(event.target.checked)} />{t("Mounting-group labels")}</label>
+            <label className="layer-option"><input type="checkbox" checked={showRoomOverlays} onChange={(event) => setShowRoomOverlays(event.target.checked)} />{t("Room overlays")}</label>
             <div className="sidebar-divider" />
-            <p className="field-label">Rooms</p>
+            <p className="field-label">{t("Rooms")}</p>
             <div className="tool-list">
-              <button type="button" className={tool === "room" ? "tool active" : "tool"} onClick={() => setTool(tool === "room" ? "select" : "room")}>＋ Draw room</button>
-              <button type="button" className={tool === "dimension" ? "tool active" : "tool"} onClick={() => { setMeasurementStart(null); setTool(tool === "dimension" ? "select" : "dimension"); }}>＋ Add dimension</button>
-              <button type="button" className="tool" onClick={addFreeNote}>＋ Add note</button>
-              <button type="button" className="tool" onClick={() => void detectRoomRegions()}>{detectedRooms ? "Detect more rooms" : "Detect rooms (beta)"}</button>
-              <button type="button" className="tool" onClick={() => addRoom("Living room", [
-                { kind: "light", label: "Ceiling light", dx: 90, dy: 45 },
-                { kind: "switch", label: "Switch", dx: 20, dy: 20 },
-                { kind: "socket", label: "Socket", dx: 30, dy: 90 },
-                { kind: "socket", label: "Socket", dx: 150, dy: 90 },
-              ])}>Living room template</button>
-              <button type="button" className="tool" onClick={() => addRoom("Kitchen", [
-                { kind: "light", label: "Ceiling light", dx: 90, dy: 45 },
-                { kind: "switch", label: "Switch", dx: 20, dy: 20 },
-                { kind: "socket", label: "Worktop socket", dx: 35, dy: 85 },
-                { kind: "socket", label: "Worktop socket", dx: 90, dy: 85 },
-                { kind: "socket", label: "Appliance socket", dx: 150, dy: 85 },
-              ])}>Kitchen template</button>
-              <button type="button" className="tool" onClick={() => addRoom("Bedroom", [
-                { kind: "light", label: "Ceiling light", dx: 90, dy: 45 },
-                { kind: "switch", label: "Switch", dx: 20, dy: 20 },
-                { kind: "socket", label: "Socket", dx: 35, dy: 90 },
-                { kind: "socket", label: "Socket", dx: 145, dy: 90 },
-              ])}>Bedroom template</button>
+              <button type="button" className={tool === "room" ? "tool active" : "tool"} onClick={() => setTool(tool === "room" ? "select" : "room")}>＋ {t("Draw room")}</button>
+              <button type="button" className={tool === "dimension" ? "tool active" : "tool"} onClick={() => { setMeasurementStart(null); setTool(tool === "dimension" ? "select" : "dimension"); }}>＋ {t("Add dimension")}</button>
+              <button type="button" className="tool" onClick={addFreeNote}>＋ {t("Add note")}</button>
+              <button type="button" className="tool" onClick={() => void detectRoomRegions()}>{detectedRooms ? t("Detect more rooms") : t("Detect rooms (beta)")}</button>
+              <button type="button" className="tool" onClick={() => addRoom(t("Living room"), [
+                { kind: "light", label: t("Ceiling light"), dx: 90, dy: 45 },
+                { kind: "switch", label: t("Switch"), dx: 20, dy: 20 },
+                { kind: "socket", label: t("Socket"), dx: 30, dy: 90 },
+                { kind: "socket", label: t("Socket"), dx: 150, dy: 90 },
+              ])}>{t("Living room template")}</button>
+              <button type="button" className="tool" onClick={() => addRoom(t("Kitchen"), [
+                { kind: "light", label: t("Ceiling light"), dx: 90, dy: 45 },
+                { kind: "switch", label: t("Switch"), dx: 20, dy: 20 },
+                { kind: "socket", label: t("Worktop socket"), dx: 35, dy: 85 },
+                { kind: "socket", label: t("Worktop socket"), dx: 90, dy: 85 },
+                { kind: "socket", label: t("Appliance socket"), dx: 150, dy: 85 },
+              ])}>{t("Kitchen template")}</button>
+              <button type="button" className="tool" onClick={() => addRoom(t("Bedroom"), [
+                { kind: "light", label: t("Ceiling light"), dx: 90, dy: 45 },
+                { kind: "switch", label: t("Switch"), dx: 20, dy: 20 },
+                { kind: "socket", label: t("Socket"), dx: 35, dy: 90 },
+                { kind: "socket", label: t("Socket"), dx: 145, dy: 90 },
+              ])}>{t("Bedroom template")}</button>
             </div>
             <div className="sidebar-divider" />
-            <p className="field-label">Symbol library</p>
+            <p className="field-label">{t("Symbol library")}</p>
             <div className="tool-list symbol-tools">
               {symbolKinds.map(({ kind, glyph, label }) => (
                 <button type="button" key={kind} className={tool === kind ? "tool active" : "tool"} onClick={() => setTool(tool === kind ? "select" : kind)}>
-                  <span className="symbol-glyph">{glyph}</span>{label}
+                  <span className="symbol-glyph">{glyph}</span>{t(label)}
                 </button>
               ))}
             </div>
@@ -1206,28 +1208,28 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
                     }}>
                       <span className="symbol-glyph" style={{ color: component.color }}>+</span>{component.name}
                     </button>
-                    <button type="button" className="icon-button" aria-label={`${component.favorite ? "Unfavorite" : "Favorite"} ${component.name}`} onClick={() => update({ custom_components: data.custom_components.map((item) => item.id === component.id ? { ...item, favorite: !item.favorite } : item) })}>{component.favorite ? "★" : "☆"}</button>
+                    <button type="button" className="icon-button" aria-label={`${t(component.favorite ? "Unfavorite" : "Favorite")} ${component.name}`} onClick={() => update({ custom_components: data.custom_components.map((item) => item.id === component.id ? { ...item, favorite: !item.favorite } : item) })}>{component.favorite ? "★" : "☆"}</button>
                   </div>
                 ))}
               </div>
             )}
             {tool === "custom" && (
               <>
-                <input aria-label="Custom symbol label" placeholder="Custom symbol name" value={customLabel} onChange={(event) => setCustomLabel(event.target.value)} />
-                <button type="button" className="text-button" onClick={saveCustomComponent}>Save to custom library</button>
+                <input aria-label={t("Custom symbol label")} placeholder={t("Custom symbol name")} value={customLabel} onChange={(event) => setCustomLabel(event.target.value)} />
+                <button type="button" className="text-button" onClick={saveCustomComponent}>{t("Save to custom library")}</button>
               </>
             )}
             {selectedRoom && (
               <>
-                <label className="field-label" htmlFor="selected-room-name">Selected room</label>
+                <label className="field-label" htmlFor="selected-room-name">{t("Selected room")}</label>
                 <input id="selected-room-name" value={selectedRoom.name} onChange={(event) => update({ rooms: data.rooms.map((room) => room.id === selectedRoom.id ? { ...room, name: event.target.value } : room) })} />
               </>
             )}
             {selectedPlacement && (
               <>
-                <label className="field-label" htmlFor="selected-symbol-name">Selected symbol</label>
+                <label className="field-label" htmlFor="selected-symbol-name">{t("Selected symbol")}</label>
                 <input id="selected-symbol-name" value={selectedPlacement.label} onChange={(event) => update({ placements: data.placements.map((item) => item.id === selectedPlacement.id ? { ...item, label: event.target.value } : item) })} />
-                <label className="field-label">Circuit assignment
+                <label className="field-label">{t("Circuit assignment")}
                   <select value={selectedPlacement.circuit_id ?? ""} onChange={(event) => {
                     const targetCircuit = data.circuits.find((item) => item.id === event.target.value);
                     if (!targetCircuit) {
@@ -1245,60 +1247,60 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
                     }
                     updateCircuit(targetCircuit.id, { loads: [...targetCircuit.loads.filter((id) => id !== selectedPlacement.id), selectedPlacement.id] });
                   }}>
-                    <option value="">Unassigned</option>
+                    <option value="">{t("Unassigned")}</option>
                     {data.circuits.map((circuit) => <option key={circuit.id} value={circuit.id}>{circuitNumber(circuit, data.rcds, data.circuits)} · {circuit.name}</option>)}
                   </select>
                 </label>
-                <label className="field-label">Room
+                <label className="field-label">{t("Room")}
                   <select value={selectedPlacement.room_id ?? ""} onChange={(event) => update({ placements: data.placements.map((item) => item.id === selectedPlacement.id ? { ...item, room_id: event.target.value || null } : item) })}>
-                    <option value="">No room</option>
+                    <option value="">{t("No room")}</option>
                     {data.rooms.map((room) => <option key={room.id} value={room.id}>{room.name}</option>)}
                   </select>
                 </label>
-                <label className="field-label">Layer
+                <label className="field-label">{t("Layer")}
                   <select value={selectedPlacement.layer_id} onChange={(event) => update({ placements: data.placements.map((item) => item.id === selectedPlacement.id ? { ...item, layer_id: event.target.value } : item) })}>
-                    {data.layers.map((layer) => <option key={layer.id} value={layer.id}>{layer.name}</option>)}
+                    {data.layers.map((layer) => <option key={layer.id} value={layer.id}>{t(layer.name)}</option>)}
                   </select>
                 </label>
-                <label className="field-label">Element ID
+                <label className="field-label">{t("Element ID")}
                   <input value={selectedPlacement.element_id ?? ""} onChange={(event) => update({ placements: data.placements.map((item) => item.id === selectedPlacement.id ? { ...item, element_id: event.target.value || null } : item) })} />
                 </label>
-                <label className="field-label">Bus address
+                <label className="field-label">{t("Bus address")}
                   <input value={selectedPlacement.bus_address ?? ""} onChange={(event) => update({ placements: data.placements.map((item) => item.id === selectedPlacement.id ? { ...item, bus_address: event.target.value || null } : item) })} />
                 </label>
                 <div className="button-row">
-                  <button type="button" className="tool" onClick={() => rotateSelection(-45)}>Rotate −45°</button>
-                  <button type="button" className="tool" onClick={() => rotateSelection(45)}>Rotate +45°</button>
+                  <button type="button" className="tool" onClick={() => rotateSelection(-45)}>{t("Rotate −45°")}</button>
+                  <button type="button" className="tool" onClick={() => rotateSelection(45)}>{t("Rotate +45°")}</button>
                 </div>
               </>
             )}
-            {selectedPlacements.length > 1 && <button type="button" className="tool" onClick={groupSelectedPlacements}>Group mounting points</button>}
+            {selectedPlacements.length > 1 && <button type="button" className="tool" onClick={groupSelectedPlacements}>{t("Group mounting points")}</button>}
             {!isClientPresentation && data.mounting_points.map((point) => (
               <div className="mounting-point-row" key={point.id}>
-                <input aria-label="Mounting group name" value={point.name} onChange={(event) => update({ mounting_points: data.mounting_points.map((item) => item.id === point.id ? { ...item, name: event.target.value } : item) })} />
+                <input aria-label={t("Mounting group name")} value={point.name} onChange={(event) => update({ mounting_points: data.mounting_points.map((item) => item.id === point.id ? { ...item, name: event.target.value } : item) })} />
                 <button type="button" className="text-button" onClick={() => update({
                   mounting_points: data.mounting_points.filter((item) => item.id !== point.id),
                   placements: data.placements.map((item) => item.mounting_point_id === point.id ? { ...item, mounting_point_id: null } : item),
-                })}>Ungroup</button>
+                })}>{t("Ungroup")}</button>
               </div>
             ))}
             {!isClientPresentation && data.free_canvas.filter((item) => item.kind === "note").map((note) => (
               <div className="mounting-point-row" key={note.id}>
-                <input aria-label="Plan note text" value={note.label} onChange={(event) => update({ free_canvas: data.free_canvas.map((item) => item.id === note.id ? { ...item, label: event.target.value } : item) })} />
-                <button type="button" className="icon-button" aria-label="Delete plan note" onClick={() => update({ free_canvas: data.free_canvas.filter((item) => item.id !== note.id) })}>×</button>
+                <input aria-label={t("Plan note text")} value={note.label} onChange={(event) => update({ free_canvas: data.free_canvas.map((item) => item.id === note.id ? { ...item, label: event.target.value } : item) })} />
+                <button type="button" className="icon-button" aria-label={t("Delete plan note")} onClick={() => update({ free_canvas: data.free_canvas.filter((item) => item.id !== note.id) })}>×</button>
               </div>
             ))}
-            {selectedIds.length > 0 && <button type="button" className="button-danger" onClick={removeSelection}>Delete selection</button>}
+            {selectedIds.length > 0 && <button type="button" className="button-danger" onClick={removeSelection}>{t("Delete selection")}</button>}
           </aside>
           <div className="canvas-column">
             <div className="canvas-instructions">
-              <span>Choose a room or symbol, then click to place. Drag to move; hold Shift and drag to pan.</span>
+              <span>{t("Choose a room or symbol, then click to place. Drag to move; hold Shift and drag to pan.")}</span>
               <div className="button-row">
-                <button type="button" className="tool" aria-label="Zoom out" onClick={() => zoomCanvas(1.2)}>−</button>
-                <button type="button" className="tool" aria-label="Zoom in" onClick={() => zoomCanvas(0.8)}>＋</button>
-                <button type="button" className="tool" onClick={() => setViewBox({ x: 0, y: 0, width: 1000, height: 700 })}>Reset view</button>
-                <button type="button" className="tool" onClick={copySelection} disabled={!selectedIds.length}>Copy</button>
-                <button type="button" className="tool" onClick={pasteSelection} disabled={!clipboard.rooms.length && !clipboard.placements.length}>Paste</button>
+                <button type="button" className="tool" aria-label={t("Zoom out")} onClick={() => zoomCanvas(1.2)}>−</button>
+                <button type="button" className="tool" aria-label={t("Zoom in")} onClick={() => zoomCanvas(0.8)}>＋</button>
+                <button type="button" className="tool" onClick={() => setViewBox({ x: 0, y: 0, width: 1000, height: 700 })}>{t("Reset view")}</button>
+                <button type="button" className="tool" onClick={copySelection} disabled={!selectedIds.length}>{t("Copy")}</button>
+                <button type="button" className="tool" onClick={pasteSelection} disabled={!clipboard.rooms.length && !clipboard.placements.length}>{t("Paste")}</button>
               </div>
             </div>
             <svg
@@ -1379,7 +1381,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
                     <text y="31" textAnchor="middle" className="placement-label">{item.label}</text>
                     {showElementIds && item.element_id && <text y="44" textAnchor="middle" className="placement-label">{item.element_id}</text>}
                     {!isClientPresentation && showBusAddresses && item.bus_address && <text y="57" textAnchor="middle" className="placement-label">{item.bus_address}</text>}
-                    {!isClientPresentation && showCircuitNames && item.circuit_id && <text y="70" textAnchor="middle" className="placement-label">{data.circuits.find((circuit) => circuit.id === item.circuit_id)?.name ?? "Circuit"}</text>}
+                    {!isClientPresentation && showCircuitNames && item.circuit_id && <text y="70" textAnchor="middle" className="placement-label">{data.circuits.find((circuit) => circuit.id === item.circuit_id)?.name ?? t("Circuit")}</text>}
                     {!isClientPresentation && showFuseAssignments && item.circuit_id && <text y="83" textAnchor="middle" className="placement-label">{(() => {
                       const circuit = data.circuits.find((entry) => entry.id === item.circuit_id);
                       return circuit ? circuitNumber(circuit, data.rcds, data.circuits) : "";
@@ -1389,30 +1391,30 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
               })}
             </svg>
             <div className="canvas-footer">
-              <span>{data.rooms.length} rooms · {data.placements.length} installation points</span>
-              <span>{data.scale_m_per_100_units ? `Scale set: ${data.scale_m_per_100_units} m / 100 units` : "Scale not set"}</span>
+              <span>{data.rooms.length} {t("rooms")} · {data.placements.length} {t("installation points")}</span>
+              <span>{data.scale_m_per_100_units ? `${t("Scale set")}: ${data.scale_m_per_100_units} m / 100 ${t("units")}` : t("Scale not set")}</span>
             </div>
           </div>
         </div>
       ) : tab === "circuits" ? (
         <div className="circuits-panel">
           <div className="circuits-intro">
-            <div><p className="eyebrow">DISTRIBUTION DOCUMENTATION</p><h4>Protective devices and outgoing circuits</h4><p>Circuits are numbered automatically below each RCD. Terminal references follow the same grouping.</p></div>
-            <button type="button" className="button-primary" onClick={addRcd}>＋ Add RCD</button>
+            <div><p className="eyebrow">{t("DISTRIBUTION DOCUMENTATION")}</p><h4>{t("Protective devices and outgoing circuits")}</h4><p>{t("Circuits are numbered automatically below each RCD. Terminal references follow the same grouping.")}</p></div>
+            <button type="button" className="button-primary" onClick={addRcd}>＋ {t("Add RCD")}</button>
           </div>
           <section className="electrical-component-panel">
-            <header><strong>Main devices, contacts and terminals</strong></header>
+            <header><strong>{t("Main devices, contacts and terminals")}</strong></header>
             <div className="button-row">
               {(["main_switch", "surge_protection", "contactor", "relay", "terminal", "power_supply", "potential_free_contact"] as ElectricalComponent["kind"][]).map((kind) => (
-                <button key={kind} type="button" className="tool" onClick={() => addElectricalComponent(kind)}>＋ {kind.replace(/_/g, " ")}</button>
+                <button key={kind} type="button" className="tool" onClick={() => addElectricalComponent(kind)}>＋ {t(kind.replace(/_/g, " "))}</button>
               ))}
             </div>
             {data.electrical_components.map((component) => (
               <div className="electrical-component-row" key={component.id}>
-                <input aria-label="Electrical component name" value={component.name} onChange={(event) => update({ electrical_components: data.electrical_components.map((item) => item.id === component.id ? { ...item, name: event.target.value } : item) })} />
-                <input aria-label="Electrical component reference" placeholder="Reference" value={component.reference ?? ""} onChange={(event) => update({ electrical_components: data.electrical_components.map((item) => item.id === component.id ? { ...item, reference: event.target.value || null } : item) })} />
+                <input aria-label={t("Electrical component name")} value={component.name} onChange={(event) => update({ electrical_components: data.electrical_components.map((item) => item.id === component.id ? { ...item, name: event.target.value } : item) })} />
+                <input aria-label={t("Electrical component reference")} placeholder={t("Reference")} value={component.reference ?? ""} onChange={(event) => update({ electrical_components: data.electrical_components.map((item) => item.id === component.id ? { ...item, reference: event.target.value || null } : item) })} />
                 <select
-                  aria-label="Controlled circuits"
+                  aria-label={t("Controlled circuits")}
                   multiple
                   size={Math.min(Math.max(data.circuits.length, 2), 4)}
                   value={component.circuit_ids}
@@ -1420,11 +1422,11 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
                 >
                   {data.circuits.map((circuit) => <option key={circuit.id} value={circuit.id}>{circuitNumber(circuit, data.rcds, data.circuits)} · {circuit.name}</option>)}
                 </select>
-                <button type="button" className="icon-button" aria-label={`Remove ${component.name}`} onClick={() => update({ electrical_components: data.electrical_components.filter((item) => item.id !== component.id), cabinet: { ...data.cabinet, modules: data.cabinet.modules.filter((module) => module.component_id !== component.id) } })}>×</button>
+                <button type="button" className="icon-button" aria-label={t("Remove {{name}}", { name: component.name })} onClick={() => update({ electrical_components: data.electrical_components.filter((item) => item.id !== component.id), cabinet: { ...data.cabinet, modules: data.cabinet.modules.filter((module) => module.component_id !== component.id) } })}>×</button>
               </div>
             ))}
           </section>
-          {data.rcds.length === 0 && <div className="empty-panel">Add an RCD to start documenting its outgoing circuits.</div>}
+          {data.rcds.length === 0 && <div className="empty-panel">{t("Add an RCD to start documenting its outgoing circuits.")}</div>}
           <div className="rcd-list">
             {data.rcds.map((rcd) => {
               const rcdIndex = data.rcds.findIndex((item) => item.id === rcd.id) + 1;
@@ -1433,17 +1435,17 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
                 <section key={rcd.id} className="rcd-card">
                   <header className="rcd-heading">
                     <div className="number-badge">F{rcdIndex}</div>
-                    <input aria-label="RCD name" value={rcd.name} onChange={(event) => update({ rcds: data.rcds.map((item) => item.id === rcd.id ? { ...item, name: event.target.value } : item) })} />
-                    <label>Rated current (mA)<input type="number" min="10" max="1000" value={rcd.rated_current_ma} onChange={(event) => update({ rcds: data.rcds.map((item) => item.id === rcd.id ? { ...item, rated_current_ma: Number(event.target.value) } : item) })} /></label>
-                    <label>Poles<select value={rcd.poles} onChange={(event) => update({ rcds: data.rcds.map((item) => item.id === rcd.id ? { ...item, poles: Number(event.target.value) as 2 | 4 } : item) })}><option value={2}>2-pole</option><option value={4}>4-pole</option></select></label>
-                    <label>Type<select value={rcd.type} onChange={(event) => update({ rcds: data.rcds.map((item) => item.id === rcd.id ? { ...item, type: event.target.value as ResidualCurrentDevice["type"] } : item) })}><option>A</option><option>F</option><option>B</option></select></label>
-                    <label>Upstream RCD<select value={rcd.upstream_id ?? ""} onChange={(event) => update({ rcds: data.rcds.map((item) => item.id === rcd.id ? { ...item, upstream_id: event.target.value || null } : item) })}><option value="">None</option>{data.rcds.filter((item) => item.id !== rcd.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-                    <button type="button" className="text-button" onClick={() => removeRcd(rcd.id)}>Remove</button>
+                    <input aria-label={t("RCD name")} value={rcd.name} onChange={(event) => update({ rcds: data.rcds.map((item) => item.id === rcd.id ? { ...item, name: event.target.value } : item) })} />
+                    <label>{t("Rated current (mA)")}<input type="number" min="10" max="1000" value={rcd.rated_current_ma} onChange={(event) => update({ rcds: data.rcds.map((item) => item.id === rcd.id ? { ...item, rated_current_ma: Number(event.target.value) } : item) })} /></label>
+                    <label>{t("Poles")}<select value={rcd.poles} onChange={(event) => update({ rcds: data.rcds.map((item) => item.id === rcd.id ? { ...item, poles: Number(event.target.value) as 2 | 4 } : item) })}><option value={2}>{t("2-pole")}</option><option value={4}>{t("4-pole")}</option></select></label>
+                    <label>{t("Type")}<select value={rcd.type} onChange={(event) => update({ rcds: data.rcds.map((item) => item.id === rcd.id ? { ...item, type: event.target.value as ResidualCurrentDevice["type"] } : item) })}><option>A</option><option>F</option><option>B</option></select></label>
+                    <label>{t("Upstream RCD")}<select value={rcd.upstream_id ?? ""} onChange={(event) => update({ rcds: data.rcds.map((item) => item.id === rcd.id ? { ...item, upstream_id: event.target.value || null } : item) })}><option value="">{t("None")}</option>{data.rcds.filter((item) => item.id !== rcd.id).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+                    <button type="button" className="text-button" onClick={() => removeRcd(rcd.id)}>{t("Remove")}</button>
                   </header>
-                  <div className="circuit-schematic" aria-label={`Schematic for ${rcd.name}`}>
+                  <div className="circuit-schematic" aria-label={t("Schematic for {{name}}", { name: rcd.name })}>
                     <div className="schematic-rcd">
                       <strong>F{rcdIndex}</strong>
-                      <span>RCD · Type {rcd.type} · {rcd.rated_current_ma} mA</span>
+                      <span>RCD · {t("Type")} {rcd.type} · {rcd.rated_current_ma} mA</span>
                     </div>
                     {circuits.length > 0 ? (
                       <div className="schematic-output">
@@ -1459,30 +1461,30 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
                           ))}
                         </div>
                       </div>
-                    ) : <p className="schematic-empty">Outgoing circuits appear here.</p>}
+                    ) : <p className="schematic-empty">{t("Outgoing circuits appear here.")}</p>}
                   </div>
                   <div className="circuit-table-wrap">
                     <table className="circuit-table">
-                      <thead><tr><th>Ref.</th><th>Circuit</th><th>Breaker</th><th>Rated current</th><th>Poles / supply</th><th>Cable</th><th>Connected plan points</th><th>Terminal</th><th /></tr></thead>
+                      <thead><tr><th>{t("Ref.")}</th><th>{t("Circuit")}</th><th>{t("Breaker")}</th><th>{t("Rated current")}</th><th>{t("Poles / supply")}</th><th>{t("Cable")}</th><th>{t("Connected plan points")}</th><th>{t("Terminal")}</th><th /></tr></thead>
                       <tbody>
                         {circuits.map((circuit) => (
                           <tr key={circuit.id}>
                             <td><span className="circuit-ref">{circuitNumber(circuit, data.rcds, data.circuits)}</span></td>
-                            <td><input aria-label="Circuit name" value={circuit.name} onChange={(event) => updateCircuit(circuit.id, { name: event.target.value })} /></td>
+                            <td><input aria-label={t("Circuit name")} value={circuit.name} onChange={(event) => updateCircuit(circuit.id, { name: event.target.value })} /></td>
                             <td><select value={circuit.breaker_type} onChange={(event) => updateCircuit(circuit.id, { breaker_type: event.target.value as ElectricalCircuit["breaker_type"] })}><option>B</option><option>C</option><option>D</option></select></td>
-                            <td><label className="unit-input"><input aria-label="Rated current in amps" type="number" min="1" max="125" value={circuit.rated_current_a} onChange={(event) => updateCircuit(circuit.id, { rated_current_a: Number(event.target.value) })} /> A</label></td>
+                            <td><label className="unit-input"><input aria-label={t("Rated current in amps")} type="number" min="1" max="125" value={circuit.rated_current_a} onChange={(event) => updateCircuit(circuit.id, { rated_current_a: Number(event.target.value) })} /> A</label></td>
                             <td>
-                              <select aria-label="Circuit poles" value={circuit.poles} onChange={(event) => updateCircuit(circuit.id, { poles: Number(event.target.value) as ElectricalCircuit["poles"] })}>
+                              <select aria-label={t("Circuit poles")} value={circuit.poles} onChange={(event) => updateCircuit(circuit.id, { poles: Number(event.target.value) as ElectricalCircuit["poles"] })}>
                                 {[1, 2, 3, 4].map((poles) => <option key={poles} value={poles}>{poles}-pole</option>)}
                               </select>
-                              <select aria-label="Circuit supply type" value={circuit.supply} onChange={(event) => updateCircuit(circuit.id, { supply: event.target.value as ElectricalCircuit["supply"] })}>
-                                <option value="1n">1N~</option><option value="3n">3N~</option><option value="emergency">Emergency</option><option value="phase_selector">Phase selector</option><option value="transfer">Transfer</option>
+                              <select aria-label={t("Circuit supply type")} value={circuit.supply} onChange={(event) => updateCircuit(circuit.id, { supply: event.target.value as ElectricalCircuit["supply"] })}>
+                                <option value="1n">1N~</option><option value="3n">3N~</option><option value="emergency">{t("Emergency")}</option><option value="phase_selector">{t("Phase selector")}</option><option value="transfer">{t("Transfer")}</option>
                               </select>
                             </td>
-                            <td><input aria-label="Cable cross section" value={circuit.cable} onChange={(event) => updateCircuit(circuit.id, { cable: event.target.value })} /></td>
+                            <td><input aria-label={t("Cable cross section")} value={circuit.cable} onChange={(event) => updateCircuit(circuit.id, { cable: event.target.value })} /></td>
                             <td>
                               <select
-                                aria-label="Connected floor-plan points"
+                                aria-label={t("Connected floor-plan points")}
                                 multiple
                                 size={Math.min(Math.max(data.placements.length, 2), 4)}
                                 value={circuit.loads}
@@ -1492,28 +1494,28 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
                               </select>
                             </td>
                             <td><span className="terminal-ref">X{rcdIndex}.{circuits.findIndex((item) => item.id === circuit.id) + 1}</span></td>
-                            <td><button className="icon-button" aria-label={`Remove ${circuit.name}`} type="button" onClick={() => removeCircuit(circuit.id)}>×</button></td>
+                            <td><button className="icon-button" aria-label={t("Remove {{name}}", { name: circuit.name })} type="button" onClick={() => removeCircuit(circuit.id)}>×</button></td>
                           </tr>
                         ))}
-                        {circuits.length === 0 && <tr><td colSpan={9} className="empty-row">No outgoing circuits yet.</td></tr>}
+                        {circuits.length === 0 && <tr><td colSpan={9} className="empty-row">{t("No outgoing circuits yet.")}</td></tr>}
                       </tbody>
                     </table>
                   </div>
-                  <footer className="rcd-footer"><span>{circuitCounts.get(rcd.id) ?? 0} circuits · X{rcdIndex} terminal group</span><div className="button-row"><button type="button" className="text-button" onClick={() => generateTerminalStrip(rcd.id)}>Generate terminal strip</button><button type="button" className="text-button" onClick={() => addCircuit(rcd.id)}>＋ Add circuit</button></div></footer>
+                  <footer className="rcd-footer"><span>{circuitCounts.get(rcd.id) ?? 0} {t("circuits")} · X{rcdIndex} {t("terminal group")}</span><div className="button-row"><button type="button" className="text-button" onClick={() => generateTerminalStrip(rcd.id)}>{t("Generate terminal strip")}</button><button type="button" className="text-button" onClick={() => addCircuit(rcd.id)}>＋ {t("Add circuit")}</button></div></footer>
                 </section>
               );
             })}
           </div>
-          <div className="board-summary"><strong>Board summary</strong><span>{data.rcds.length} RCDs</span><span>{data.circuits.length} outgoing circuits</span><span>{data.placements.filter((item) => item.kind === "knx").length} KNX points on floor plan</span></div>
+          <div className="board-summary"><strong>{t("Board summary")}</strong><span>{data.rcds.length} {t("RCDs")}</span><span>{data.circuits.length} {t("outgoing circuits")}</span><span>{data.placements.filter((item) => item.kind === "knx").length} {t("KNX points on floor plan")}</span></div>
           {data.terminal_strips.length > 0 && (
             <section className="terminal-strip-list">
-              <h4>Terminal plan</h4>
+              <h4>{t("Terminal plan")}</h4>
               {data.terminal_strips.map((strip) => (
                 <article className="terminal-strip-card" key={strip.id}>
-                  <input aria-label="Terminal strip name" value={strip.name} onChange={(event) => update({ terminal_strips: data.terminal_strips.map((item) => item.id === strip.id ? { ...item, name: event.target.value } : item) })} />
+                  <input aria-label={t("Terminal strip name")} value={strip.name} onChange={(event) => update({ terminal_strips: data.terminal_strips.map((item) => item.id === strip.id ? { ...item, name: event.target.value } : item) })} />
                   <span>{strip.kind}</span>
-                  <span>{strip.circuit_ids.length} circuits · {strip.terminals_per_circuit} terminals each · {strip.terminal_width_mm} mm</span>
-                  <button type="button" className="icon-button" aria-label={`Remove ${strip.name}`} onClick={() => update({ terminal_strips: data.terminal_strips.filter((item) => item.id !== strip.id) })}>×</button>
+                  <span>{strip.circuit_ids.length} {t("circuits")} · {strip.terminals_per_circuit} {t("terminals each")} · {strip.terminal_width_mm} mm</span>
+                  <button type="button" className="icon-button" aria-label={t("Remove {{name}}", { name: strip.name })} onClick={() => update({ terminal_strips: data.terminal_strips.filter((item) => item.id !== strip.id) })}>×</button>
                 </article>
               ))}
             </section>
@@ -1532,7 +1534,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
         onChange={update}
       />
       {feedback && <p className={feedback.includes("failed") || feedback.includes("Choose") || feedback.includes("smaller") ? "editor-error" : "editor-status"} role="status">{feedback}</p>}
-      {save.isError && !feedback && <p className="editor-error" role="alert">Could not save this workspace.</p>}
+      {save.isError && !feedback && <p className="editor-error" role="alert">{t("Could not save this workspace.")}</p>}
     </section>
   );
 }

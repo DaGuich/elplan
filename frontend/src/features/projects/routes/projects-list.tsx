@@ -6,10 +6,12 @@ import { createColumnHelper, flexRender, getCoreRowModel, useReactTable } from "
 import { Project, projectsApi } from "../api";
 import { ProjectForm } from "../components/project-form";
 import { useProjects } from "../queries";
+import { useI18n } from "../../../i18n";
 
 const col = createColumnHelper<Project>();
 
 export function ProjectsListPage() {
+  const { t } = useI18n();
   const [includeArchived, setIncludeArchived] = useState(false);
   const queryClient = useQueryClient();
   const { data = [], isLoading, isError } = useProjects(includeArchived);
@@ -29,7 +31,7 @@ export function ProjectsListPage() {
         cell: (info) => info.getValue(),
       }),
       col.accessor("name", {
-        header: "Name",
+        header: t("Name"),
         cell: (info) => {
           const row = info.row.original;
           return (
@@ -40,27 +42,27 @@ export function ProjectsListPage() {
         },
       }),
       col.accessor("description", {
-        header: "Description",
+        header: t("Description"),
         cell: (info) => info.getValue() ?? "",
       }),
       col.accessor("archived", {
-        header: "Status",
-        cell: (info) => info.getValue() ? "Archived" : "Active",
+        header: t("Status"),
+        cell: (info) => info.getValue() ? t("Archived") : t("Active"),
       }),
       col.display({
         id: "actions",
-        header: "Actions",
+        header: t("Actions"),
         cell: (info) => {
           const row = info.row.original;
           return (
             <div className="button-row">
-              <button type="button" className="text-button" onClick={() => duplicateProject.mutate(row.id)}>Duplicate</button>
-              <button type="button" className="text-button" onClick={() => updateProject.mutate({ id: row.id, archived: !row.archived })}>{row.archived ? "Restore" : "Archive"}</button>
+              <button type="button" className="text-button" onClick={() => duplicateProject.mutate(row.id)}>{t("Duplicate")}</button>
+              <button type="button" className="text-button" onClick={() => updateProject.mutate({ id: row.id, archived: !row.archived })}>{row.archived ? t("Restore") : t("Archive")}</button>
             </div>
           );
         },
       }),
-    ], [duplicateProject, updateProject]);
+    ], [duplicateProject, t, updateProject]);
 
   const table = useReactTable({
     data,
@@ -70,13 +72,13 @@ export function ProjectsListPage() {
 
   return (
     <div className="grid gap-6">
-      <h2>Projects</h2>
+      <h2>{t("Projects")}</h2>
       <ProjectForm />
-      <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" className="size-4 accent-emerald-700" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} />Show archived projects</label>
+      <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" className="size-4 accent-emerald-700" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} />{t("Show archived projects")}</label>
 
-      {isLoading && <p className="text-slate-500">Loading projects...</p>}
-      {isError && <p className="text-red-600">Failed to load projects.</p>}
-      {!isLoading && !isError && data.length === 0 && <p className="text-slate-500">No projects yet. Create your first one above.</p>}
+      {isLoading && <p className="text-slate-500">{t("Loading projects...")}</p>}
+      {isError && <p className="text-red-600">{t("Failed to load projects.")}</p>}
+      {!isLoading && !isError && data.length === 0 && <p className="text-slate-500">{t("No projects yet. Create your first one above.")}</p>}
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
       <table className="w-full min-w-[560px] border-collapse text-left text-sm">
