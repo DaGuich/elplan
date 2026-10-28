@@ -1,3 +1,74 @@
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* Layered defaults: any unlayered component rule below still wins. */
+@layer base {
+  :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]), select, textarea) {
+    font-family: inherit;
+    border: 1px solid var(--color-slate-300);
+    border-radius: 0.5rem;
+    background: #fff;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  :where(input, select, textarea):focus-visible {
+    outline: none;
+    border-color: var(--color-emerald-600);
+    box-shadow: 0 0 0 3px rgb(5 150 105 / 0.2);
+  }
+
+  :where(button) {
+    font-family: inherit;
+    border: 1px solid var(--color-slate-300);
+    border-radius: 0.5rem;
+    background: #fff;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-slate-700);
+    transition: background-color 0.15s, border-color 0.15s;
+  }
+
+  :where(button):hover:not(:disabled) {
+    background: var(--color-slate-50);
+    border-color: var(--color-slate-400);
+  }
+
+  :where(button[type="submit"]) {
+    border-color: var(--color-emerald-700);
+    background: var(--color-emerald-700);
+    color: #fff;
+  }
+
+  :where(button[type="submit"]):hover:not(:disabled) {
+    background: var(--color-emerald-800);
+    border-color: var(--color-emerald-800);
+  }
+
+  :where(h1, h2, h3) {
+    margin: 0;
+  }
+
+  :where(h2) {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  :where(h3) {
+    font-size: 1.05rem;
+    font-weight: 650;
+  }
+
+  :where(a) {
+    color: var(--color-emerald-700);
+  }
+}
+
 :root {
   font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
   color: #172235;
@@ -18,17 +89,7 @@ body {
   background: #f3f6fa;
 }
 
-input,
-textarea,
-button {
-  font: inherit;
-}
 
-button,
-input,
-select {
-  color: inherit;
-}
 
 button {
   cursor: pointer;
@@ -48,12 +109,18 @@ button:disabled {
 }
 
 .app-header {
-  height: 66px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  min-height: 60px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 4px 16px;
   padding: 0 32px;
-  background: #fff;
+  background: rgb(255 255 255 / 0.85);
+  backdrop-filter: blur(10px);
   border-bottom: 1px solid #e4e9f0;
 }
 
@@ -90,7 +157,7 @@ button:disabled {
 }
 
 .page-container {
-  width: min(100% - 48px, 1600px);
+  width: min(100% - 32px, 1600px);
   margin: 0 auto;
   padding: 28px 0 60px;
 }

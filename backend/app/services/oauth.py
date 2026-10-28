@@ -132,10 +132,13 @@ def resolve_user(db: Session, info: dict) -> User:
 
     user = db.scalar(select(User).where(func.lower(User.email) == email))
     if user is not None:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            "Email already registered; sign in with the existing account",
-        )
+        if not settings.OAUTH_TRUST_EMAIL:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Email already registered; sign in with the existing account",
+            )
+        if not user.is_active:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Account disabled")
     else:
         name = info.get("name") or info.get("preferred_username") or email
         user = User(email=email, name=str(name)[:200], password_hash=UNUSABLE_PASSWORD)

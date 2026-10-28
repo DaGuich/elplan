@@ -15,6 +15,7 @@ client = TestClient(app, follow_redirects=False)
 @pytest.fixture(autouse=True)
 def provider(monkeypatch):
     monkeypatch.setattr(settings, "OAUTH_CLIENT_ID", "cid")
+    monkeypatch.setattr(settings, "OAUTH_TRUST_EMAIL", False)
     monkeypatch.setattr(oauth, "_cache", oauth.Endpoints("https://idp", "https://idp/auth", "https://idp/token", "https://idp/info"))
     state = {"info": {}}
     monkeypatch.setattr(oauth, "exchange_code", lambda code, verifier: "at")
@@ -52,12 +53,19 @@ def test_state_mismatch_rejected(provider):
     assert finish("wrong").startswith("error=")
 
 
-def test_existing_local_account_is_never_auto_linked(provider):
+def test_existing_local_account_requires_explicit_email_trust(provider, monkeypatch):
     email = f"loc-{uuid.uuid4().hex[:8]}@example.com"
     client.post("/api/v1/auth/register", json={"email": email, "name": "L", "password": "password123"})
     provider["info"] = {"sub": uuid.uuid4().hex, "email": email, "email_verified": False}
     assert finish(start_login()).startswith("error=")
     provider["info"]["email_verified"] = True
     assert finish(start_login()).startswith("error=")
+
+    monkeypatch.setattr(settings, "OAUTH_TRUST_EMAIL", True)
+    frag = finish(start_login())
+    assert frag.startswith("token=")
+    me = client.get("/api/v1/users/me", headers={"Authorization": "Bearer " + frag[6:]})
+    assert me.json()["email"] == email
+
     login = client.post("/api/v1/auth/login", json={"email": email, "password": "password123"})
     assert login.status_code == 200

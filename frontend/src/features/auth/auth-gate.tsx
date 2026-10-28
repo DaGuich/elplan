@@ -46,9 +46,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+      <div className="flex items-center justify-end gap-3 bg-slate-900 px-4 py-1.5 text-xs text-slate-200 sm:px-8">
         <span>{me.data.name}</span>
         <button
+          className="!border-slate-600 !bg-transparent !px-2 !py-0.5 !text-xs !text-slate-200 hover:!bg-slate-800"
           onClick={() => {
             tokenStore.clear();
             window.dispatchEvent(new Event("elplan:logout"));
@@ -92,8 +93,8 @@ function LoginForm({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <form onSubmit={submit} style={{ display: "grid", gap: 8, maxWidth: 320 }}>
-      <h2>{mode === "login" ? "Log in" : "Register"}</h2>
+    <form onSubmit={submit} className="mx-auto mt-16 grid w-full max-w-sm gap-3 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <h2 className="text-xl font-semibold">{mode === "login" ? "Log in" : "Register"}</h2>
       <input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
       {mode === "register" && (
         <input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -106,14 +107,18 @@ function LoginForm({ onDone }: { onDone: () => void }) {
         onChange={(e) => setPassword(e.target.value)}
         required
       />
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
       <button type="submit">{mode === "login" ? "Log in" : "Register"}</button>
       {config.data?.oauth_enabled && (
-        <a href="/api/v1/auth/oauth/login">
-          <button type="button">Log in with {config.data.oauth_provider_name}</button>
+        <a className="rounded-md border border-slate-300 bg-white px-4 py-2 text-center text-sm font-medium text-slate-700 hover:bg-slate-50" href="/api/v1/auth/oauth/login">
+          Log in with {config.data.oauth_provider_name}
         </a>
       )}
-      <button type="button" onClick={() => setMode(mode === "login" ? "register" : "login")}>
+      {config.isError && <p role="alert" className="text-sm text-red-600">Could not load SSO configuration.</p>}
+      {config.data && !config.data.oauth_enabled && (
+        <p className="text-sm text-slate-500">SSO login is not configured on this server.</p>
+      )}
+      <button type="button" className="text-sm text-emerald-700 hover:underline" onClick={() => setMode(mode === "login" ? "register" : "login")}>
         {mode === "login" ? "Create an account" : "I already have an account"}
       </button>
     </form>

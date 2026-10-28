@@ -58,6 +58,8 @@ Projects can be duplicated, archived, imported/exported as JSON, and transferred
 
 The backend performs the authorization-code flow (with PKCE) itself and exchanges the code with the provider server-side (back-channel). Configure it only via environment variables (put them in a `.env` file next to the compose file, or export them):
 
+OAuth is optional and its login button is shown only when `OAUTH_CLIENT_ID` is set. Register the exact `OAUTH_REDIRECT_URI` with your identity provider, configure the client credentials and discovery URL in the compose-level `.env`, then restart the backend. Without a configured provider, use the built-in email/password login.
+
 | Variable | Description |
 |---|---|
 | `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET` | Client credentials; OAuth login is enabled when the ID is set |
@@ -69,4 +71,4 @@ The backend performs the authorization-code flow (with PKCE) itself and exchange
 | `OAUTH_TRUST_EMAIL` | Link to existing local accounts by email even if the provider doesn't mark it verified (default `false`) |
 | `FRONTEND_URL` | Where the browser returns after login |
 
-Users are identified by (issuer, `sub`); unknown users are created on first login.
+Users are identified by (issuer, `sub`); unknown users are created on first login. Existing password accounts are not automatically linked by default; set `OAUTH_TRUST_EMAIL=true` only for a provider you trust to assert email ownership. Otherwise, sign in with the existing account locally to avoid account takeover through an unverified email claim.
