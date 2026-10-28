@@ -1,8 +1,16 @@
-import type { FormEvent } from "react";
-import { useState } from "react";
+import type { ChangeEvent, FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "@tanstack/react-router";
+import { QRCodeSVG } from "qrcode.react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { useBuildings, useCreateBuilding, useProject } from "../queries";
+import { FloorPlanEditor } from "../components/floor-plan-editor";
+import { Project, projectsApi } from "../api";
+import { useBuildings, useCreateBuilding, useManageProjectStructure, useProject } from "../queries";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 export function ProjectDetailPage() {
   const { projectId } = useParams({ from: "/projects/$projectId" });
@@ -10,87 +18,272 @@ export function ProjectDetailPage() {
   const project = useProject(id);
   const buildings = useBuildings(id);
   const createBuilding = useCreateBuilding(id);
+  const structure = useManageProjectStructure(id);
+  const queryClient = useQueryClient();
+  const [feedback, setFeedback] = useState("");
   const [buildingName, setBuildingName] = useState("");
   const [floorNames, setFloorNames] = useState(["Ground floor"]);
+  const [selectedFloorId, setSelectedFloorId] = useState<number>();
+  const [sharePassword, setSharePassword] = useState("");
+  const [shareUrl, setShareUrl] = useState("");
+  const [targetOrganizationId, setTargetOrganizationId] = useState("");
+  const [targetTeamId, setTargetTeamId] = useState("");
+  const shares = useQuery({
+    queryKey: ["projects", id, "shares"],
+    queryFn: () => projectsApi.shares(id),
+  });
+  const saveProject = useMutation({
+    mutationFn: (patch: Partial<Pick<Project, "name" | "description" | "archived" | "team_id">>) => projectsApi.updateProject(id, patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["projects", id] });
+    },
+  });
+  const duplicateProject = useMutation({
+    mutationFn: () => projectsApi.duplicateProject(id),
+    onSuccess: (copy) => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      setFeedback(`Project duplicated as “${copy.name}”.`);
+    },
+  });
+  const createShare = useMutation({
+    mutationFn: () => projectsApi.createShare(id, true, sharePassword || undefined),
+    onSuccess: (share) => {
+      const url = `${window.location.origin}/share/${share.token}`;
+      setShareUrl(url);
+      setSharePassword("");
+      queryClient.invalidateQueries({ queryKey: ["projects", id, "shares"] });
+    },
+  });
+  const deleteShare = useMutation({
+    mutationFn: (shareId: number) => projectsApi.deleteShare(id, shareId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["projects", id, "shares"] }),
+  });
+  const transferProject = useMutation({
+    mutationFn: () => projectsApi.transferProject(
+      id,
+      Number(targetOrganizationId),
+      targetTeamId ? Number(targetTeamId) : null
+    ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["projects", id] });
+      setFeedback("Project transferred.");
+    },
+  });
+
+  useEffect(() => {
+    const availableFloors = buildings.data?.flatMap((building) => building.floors) ?? [];
+    if (availableFloors.length && !availableFloors.some((floor) => floor.id === selectedFloorId)) {
+      setSelectedFloorId(availableFloors[0].id);
+    }
+  }, [buildings.data, selectedFloorId]);
 
   function submitBuilding(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     createBuilding.mutate(
       { name: buildingName, floors: floorNames.map((name) => ({ name })) },
       {
-        onSuccess: () => {
+        onSuccess: (building) => {
           setBuildingName("");
           setFloorNames(["Ground floor"]);
+          setSelectedFloorId(building.floors[0]?.id);
         },
       }
     );
   }
 
-  if (project.isLoading) return <p>Loading project...</p>;
-  if (project.isError || !project.data) return <p>Failed to load project.</p>;
+  async function exportProject() {
+    try {
+      const value = await projectsApi.exportProject(id);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }));
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${project.data?.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "project"}.elplan.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setFeedback("Project export downloaded.");
+    } catch {
+      setFeedback("Could not export this project.");
+    }
+  }
+
+  function importProject(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (file.size > 20_000_000) {
+      setFeedback("Project files must be 20 MB or smaller.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed: unknown = JSON.parse(String(reader.result));
+        if (!isRecord(parsed) || !Array.isArray(parsed.buildings) || typeof parsed.name !== "string") {
+          setFeedback("The selected file is not a valid elplan project export.");
+          return;
+        }
+        projectsApi.importProject({
+          ...parsed,
+          organization_id: project.data!.organization_id,
+          team_id: project.data!.team_id ?? null,
+        }).then((created) => {
+          queryClient.invalidateQueries({ queryKey: ["projects"] });
+          setFeedback(`Project imported as “${created.name}”.`);
+        }).catch(() => setFeedback("Could not import this project file."));
+      } catch {
+        setFeedback("Could not parse the selected project file.");
+      }
+    };
+    reader.onerror = () => setFeedback("Could not read the selected project file.");
+    reader.readAsText(file);
+  }
+
+  if (project.isLoading) return <p className="editor-status">Loading project…</p>;
+  if (project.isError || !project.data) return <p className="editor-error">Failed to load project.</p>;
+
+  const floors = buildings.data?.flatMap((building) => building.floors) ?? [];
+  const selectedFloor = floors.find((floor) => floor.id === selectedFloorId);
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <h2>{project.data.name}</h2>
-      {project.data.description && <p>{project.data.description}</p>}
+    <div className="project-page">
+      <header className="project-heading">
+        <div>
+          <p className="eyebrow">PROJECT</p>
+          <h2>{project.data.name}</h2>
+          {project.data.description && <p className="project-description">{project.data.description}</p>}
+        </div>
+        <div className="project-actions">
+          <button type="button" className="button-secondary" onClick={() => duplicateProject.mutate()} disabled={duplicateProject.isPending}>Duplicate</button>
+          <button type="button" className="button-secondary" onClick={() => saveProject.mutate({ archived: !project.data.archived })}>
+            {project.data.archived ? "Restore project" : "Archive project"}
+          </button>
+          <span className="project-tag">{project.data.archived ? "Archived" : "Electrical planning"}</span>
+        </div>
+      </header>
 
-      <section style={{ display: "grid", gap: 12 }}>
-        <h3>Buildings</h3>
-        {buildings.isLoading && <p>Loading buildings...</p>}
-        {buildings.isError && <p>Failed to load buildings.</p>}
-        {buildings.data?.map((building) => (
-          <article key={building.id}>
-            <h4>{building.name}</h4>
-            <ol>
-              {building.floors.map((floor) => (
-                <li key={floor.id}>{floor.name}</li>
-              ))}
-            </ol>
-          </article>
-        ))}
-        {buildings.data?.length === 0 && <p>No buildings yet.</p>}
-
-        <form onSubmit={submitBuilding} style={{ display: "grid", gap: 8, maxWidth: 560 }}>
-          <h4>Create building</h4>
-          <input
-            required
-            maxLength={200}
-            placeholder="Building name"
-            value={buildingName}
-            onChange={(event) => setBuildingName(event.target.value)}
-          />
-          {floorNames.map((name, index) => (
-            <div key={index} style={{ display: "flex", gap: 8 }}>
-              <input
-                required
-                maxLength={200}
-                aria-label={`Floor ${index + 1} name`}
-                placeholder={`Floor ${index + 1}`}
-                value={name}
-                onChange={(event) =>
-                  setFloorNames((floors) =>
-                    floors.map((floor, floorIndex) => (floorIndex === index ? event.target.value : floor))
-                  )
-                }
-              />
-              <button
-                type="button"
-                disabled={floorNames.length === 1}
-                onClick={() => setFloorNames((floors) => floors.filter((_, floorIndex) => floorIndex !== index))}
-              >
-                Remove floor
-              </button>
+      <div className="project-content">
+        <section className="structure-panel">
+          <section className="project-management-card">
+            <h3>Project details</h3>
+            <label>Project name<input key={project.data.name} defaultValue={project.data.name} onBlur={(event) => {
+              const name = event.currentTarget.value.trim();
+              if (name && name !== project.data?.name) saveProject.mutate({ name });
+            }} /></label>
+            <label>Description<textarea key={project.data.description ?? ""} defaultValue={project.data.description ?? ""} rows={2} onBlur={(event) => {
+              const description = event.currentTarget.value.trim();
+              if (description !== (project.data?.description ?? "")) saveProject.mutate({ description });
+            }} /></label>
+            <div className="button-row">
+              <button type="button" className="button-secondary" onClick={() => void exportProject()}>Export project JSON</button>
+              <label className="button-secondary import-file-button">Import project JSON<input type="file" accept=".json,application/json" onChange={importProject} /></label>
             </div>
-          ))}
-          <button type="button" onClick={() => setFloorNames((floors) => [...floors, ""])}>
-            Add floor
-          </button>
-          {createBuilding.isError && <p>Failed to create building.</p>}
-          <button type="submit" disabled={createBuilding.isPending}>
-            {createBuilding.isPending ? "Creating..." : "Create building"}
-          </button>
-        </form>
-      </section>
+            <form className="transfer-form" onSubmit={(event) => { event.preventDefault(); transferProject.mutate(); }}>
+              <label>Transfer to organization ID<input type="number" min="1" required value={targetOrganizationId} onChange={(event) => setTargetOrganizationId(event.target.value)} /></label>
+              <label>Team ID (optional)<input type="number" min="1" value={targetTeamId} onChange={(event) => setTargetTeamId(event.target.value)} /></label>
+              <button className="button-secondary" type="submit" disabled={transferProject.isPending}>Transfer project</button>
+            </form>
+            {transferProject.isError && <p className="editor-error">Could not transfer project. Check organization access and team assignment.</p>}
+          </section>
+          <section className="project-management-card">
+            <h3>Client sharing</h3>
+            <p className="field-hint">Creates a public client-view link with technical details and pricing filtered out.</p>
+            <form onSubmit={(event) => { event.preventDefault(); createShare.mutate(); }}>
+              <label>Optional password<input type="password" autoComplete="new-password" value={sharePassword} onChange={(event) => setSharePassword(event.target.value)} /></label>
+              <button type="submit" className="button-secondary" disabled={createShare.isPending}>Create client link</button>
+            </form>
+            {createShare.isError && <p className="editor-error">Could not create the share link. Passwords must be at least 8 characters.</p>}
+            {shareUrl && <div className="share-result"><QRCodeSVG value={shareUrl} size={120} /><a href={shareUrl} target="_blank" rel="noreferrer">{shareUrl}</a><button type="button" className="text-button" onClick={() => navigator.clipboard.writeText(shareUrl)}>Copy link</button></div>}
+            {shares.data?.map((share) => {
+              const url = `${window.location.origin}/share/${share.token}`;
+              return <div className="share-row" key={share.id}><QRCodeSVG value={url} size={70} /><a href={url} target="_blank" rel="noreferrer">Client view · {share.token.slice(0, 8)}…</a><button type="button" className="icon-button" aria-label="Revoke share link" onClick={() => deleteShare.mutate(share.id)}>×</button></div>;
+            })}
+            {shares.isError && <p className="editor-error">Could not load client links.</p>}
+          </section>
+          <div className="section-heading">
+            <div><p className="eyebrow">PROJECT STRUCTURE</p><h3>Buildings &amp; floors</h3></div>
+            <span className="count-pill">{floors.length} floors</span>
+          </div>
+          {buildings.isLoading && <p className="editor-status">Loading buildings…</p>}
+          {buildings.isError && <p className="editor-error">Failed to load buildings.</p>}
+          <div className="building-list">
+            {buildings.data?.map((building) => (
+              <article key={building.id} className="building-card">
+                <input aria-label="Building name" defaultValue={building.name} onBlur={(event) => {
+                  const name = event.currentTarget.value.trim();
+                  if (name && name !== building.name) structure.updateBuilding.mutate({ buildingId: building.id, name });
+                }} />
+                <div className="floor-list">
+                  {building.floors.map((floor) => (
+                    <div className="floor-management-row" key={floor.id}>
+                      <button type="button" className={selectedFloorId === floor.id ? "floor-option selected" : "floor-option"} onClick={() => setSelectedFloorId(floor.id)}>
+                        <span className="floor-icon">⌂</span>{floor.name}<span className="floor-chevron">›</span>
+                      </button>
+                      <button type="button" className="icon-button" aria-label={`Duplicate ${floor.name}`} onClick={() => structure.duplicateFloor.mutate(floor.id)}>⧉</button>
+                      <button type="button" className="icon-button" aria-label={`Rename ${floor.name}`} onClick={() => {
+                        const name = window.prompt("Floor name", floor.name)?.trim();
+                        if (name && name !== floor.name) structure.updateFloor.mutate({ floorId: floor.id, name });
+                      }}>✎</button>
+                      <button type="button" className="icon-button" aria-label={`Delete ${floor.name}`} onClick={() => {
+                        if (window.confirm(`Delete floor “${floor.name}” and its plan?`)) structure.deleteFloor.mutate(floor.id);
+                      }}>×</button>
+                    </div>
+                  ))}
+                </div>
+                <form className="add-floor-form" onSubmit={(event) => {
+                  event.preventDefault();
+                  const form = event.currentTarget;
+                  const name = String(new FormData(form).get("floor") ?? "").trim();
+                  if (name) structure.createFloor.mutate({ buildingId: building.id, name }, { onSuccess: (floor) => { setSelectedFloorId(floor.id); form.reset(); } });
+                }}>
+                  <input name="floor" required placeholder="New floor name" aria-label={`New floor in ${building.name}`} />
+                  <button type="submit" className="text-button">＋ Floor</button>
+                </form>
+                <button type="button" className="text-button" onClick={() => {
+                  if (window.confirm(`Delete building “${building.name}” and its floors?`)) structure.deleteBuilding.mutate(building.id);
+                }}>Delete building</button>
+              </article>
+            ))}
+            {buildings.data?.length === 0 && <p className="empty-panel">No buildings yet. Add one to start planning.</p>}
+          </div>
+          <form onSubmit={submitBuilding} className="building-form">
+            <p className="field-label">Add building</p>
+            <input required maxLength={200} aria-label="Building name" placeholder="Building name" value={buildingName} onChange={(event) => setBuildingName(event.target.value)} />
+            <div className="floor-name-fields">
+              {floorNames.map((name, index) => (
+                <div key={index} className="floor-name-row">
+                  <input
+                    required
+                    maxLength={200}
+                    aria-label={`Floor ${index + 1} name`}
+                    placeholder={`Floor ${index + 1}`}
+                    value={name}
+                    onChange={(event) => setFloorNames((current) => current.map((floor, floorIndex) => floorIndex === index ? event.target.value : floor))}
+                  />
+                  <button type="button" className="icon-button" aria-label={`Remove floor ${index + 1}`} disabled={floorNames.length === 1} onClick={() => setFloorNames((current) => current.filter((_, floorIndex) => floorIndex !== index))}>×</button>
+                </div>
+              ))}
+            </div>
+            <button type="button" className="text-button" onClick={() => setFloorNames((current) => [...current, ""])}>＋ Add floor</button>
+            {createBuilding.isError && <p className="editor-error">Could not create building.</p>}
+            <button className="button-primary" type="submit" disabled={createBuilding.isPending}>{createBuilding.isPending ? "Creating…" : "Create building"}</button>
+          </form>
+        </section>
+
+        <main className="workspace-column">
+          {selectedFloor ? (
+            <FloorPlanEditor projectId={id} floorId={selectedFloor.id} floorName={selectedFloor.name} projectName={project.data?.name ?? ""} />
+          ) : (
+            <section className="workspace empty-workspace">
+              <div className="empty-icon">⌂</div>
+              <h3>Your planning workspace</h3>
+              <p>Create a building and floor to import a floor plan, place installation symbols, and document distribution circuits.</p>
+            </section>
+          )}
+        </main>
+      </div>
+      {feedback && <p className="editor-status" role="status">{feedback}</p>}
     </div>
   );
 }

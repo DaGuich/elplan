@@ -48,6 +48,12 @@ alembic upgrade head
 - A project may be assigned to a team; it is then visible/editable/deletable only by team members. Project-related items must use `require_project_access` (`backend/app/services/access.py`).
 - Upgrading: migration `0002` deletes pre-existing projects (they have no organization).
 
+## Floor planning and electrical documentation
+
+Each project can contain buildings and floors. A floor workspace supports raster and PDF plan import, room templates and beta room-region detection, layers and client presentation, scale calibration, dimensions, symbol placement, mounting-point groups, snapping, multi-selection, pan/zoom, notes, and DXF export. Circuit schedules connect floor symbols to RCDs and outgoing circuits; smart-device channels, terminal groups, and DIN-rail cabinet layouts are managed alongside the plan. Project documentation includes a bill of materials, pricing, test measurements, terminal sizing, CSV import/export, and a printable handbook.
+
+Projects can be duplicated, archived, imported/exported as JSON, and transferred between organizations. Password-protected client links expose a filtered presentation with technical assignments, cabinet details, testing records, and prices removed; use the share-management panel to create or revoke links and display their QR codes. Floor and project workspaces persist as validated floor-level JSON.
+
 ## OAuth2 / OIDC login (e.g. Authentik)
 
 The backend performs the authorization-code flow (with PKCE) itself and exchanges the code with the provider server-side (back-channel). Configure it only via environment variables (put them in a `.env` file next to the compose file, or export them):
