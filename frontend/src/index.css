@@ -156,6 +156,12 @@ button:disabled {
   background: #eaf5f2;
 }
 
+.language-select select {
+  min-width: 105px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.8125rem;
+}
+
 .page-container {
   width: min(100% - 32px, 1600px);
   margin: 0 auto;

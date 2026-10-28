@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { useOrganizations, useTeams } from "../../organizations/queries";
 import { useCreateProject } from "../queries";
+import { useI18n } from "../../../i18n";
 
 export function ProjectForm() {
+  const { t } = useI18n();
   const createProject = useCreateProject();
   const { data: orgs = [] } = useOrganizations();
   const [orgId, setOrgId] = useState<number | undefined>();
@@ -13,7 +15,7 @@ export function ProjectForm() {
   const { data: teams = [] } = useTeams(activeOrg);
 
   if (orgs.length === 0) {
-    return <p>Create an organization first to add projects.</p>;
+    return <p>{t("Create an organization first to add projects.")}</p>;
   }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -48,16 +50,16 @@ export function ProjectForm() {
         ))}
       </select>
       <select value={teamId ?? ""} onChange={(e) => setTeamId(e.target.value ? Number(e.target.value) : null)}>
-        <option value="">Whole organization</option>
-        {teams.map((t) => (
-          <option key={t.id} value={t.id}>
-            Team: {t.name}
+        <option value="">{t("Whole organization")}</option>
+        {teams.map((team) => (
+          <option key={team.id} value={team.id}>
+            {t("Team: {{name}}", { name: team.name })}
           </option>
         ))}
       </select>
       <input
         className="sm:col-span-2"
-        placeholder="Project name"
+        placeholder={t("Project name")}
         value={name}
         onChange={(e) => setName(e.target.value)}
         maxLength={200}
@@ -65,18 +67,18 @@ export function ProjectForm() {
       />
       <textarea
         className="sm:col-span-2"
-        placeholder="Description"
+        placeholder={t("Description")}
         rows={4}
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         maxLength={2000}
       />
       <button type="submit" className="sm:col-span-2" disabled={createProject.isPending}>
-        {createProject.isPending ? "Creating..." : "Create project"}
+        {createProject.isPending ? t("Creating...") : t("Create project")}
       </button>
       {createProject.isError && (
         <p className="editor-error sm:col-span-2" role="alert">
-          Could not create project. Check your organization and team access, then try again.
+          {t("Could not create project. Check your organization and team access, then try again.")}
         </p>
       )}
     </form>

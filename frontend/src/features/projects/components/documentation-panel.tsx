@@ -8,6 +8,7 @@ import {
   ResidualCurrentDevice,
   TestMeasurement,
 } from "../api";
+import { useI18n } from "../../../i18n";
 
 type Props = {
   data: FloorPlanData;
@@ -64,6 +65,7 @@ function csvCell(value: string | number) {
 }
 
 export function DocumentationPanel({ data, floorName, projectName, active = true, onChange }: Props) {
+  const { t } = useI18n();
   const [importMessage, setImportMessage] = useState("");
   const annotation = data.annotation;
   const total = data.prices.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
@@ -101,18 +103,18 @@ export function DocumentationPanel({ data, floorName, projectName, active = true
     event.target.value = "";
     if (!file) return;
     if (file.size > 2_000_000) {
-      setImportMessage("Test protocol CSV must be 2 MB or smaller.");
+      setImportMessage(t("Test protocol CSV must be 2 MB or smaller."));
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result !== "string") {
-        setImportMessage("Could not read the selected protocol.");
+        setImportMessage(t("Could not read the selected protocol."));
         return;
       }
       const lines = reader.result.replace(/^\uFEFF/, "").split(/\r?\n/).filter(Boolean);
       if (lines.length < 2) {
-        setImportMessage("CSV must include a header and at least one test row.");
+        setImportMessage(t("CSV must include a header and at least one test row."));
         return;
       }
       const delimiter = lines[0].includes(";") ? ";" : ",";
@@ -145,13 +147,13 @@ export function DocumentationPanel({ data, floorName, projectName, active = true
         };
       }).filter((item): item is TestMeasurement => item !== null);
       if (!imported.length) {
-        setImportMessage("No valid measurement rows were found.");
+        setImportMessage(t("No valid measurement rows were found."));
         return;
       }
       onChange({ measurements: [...data.measurements, ...imported] });
-      setImportMessage(`${imported.length} test measurements imported.`);
+      setImportMessage(t("{{count}} test measurements imported.", { count: imported.length }));
     };
-    reader.onerror = () => setImportMessage("Could not read the selected protocol.");
+    reader.onerror = () => setImportMessage(t("Could not read the selected protocol."));
     reader.readAsText(file);
   }
 
@@ -174,9 +176,9 @@ export function DocumentationPanel({ data, floorName, projectName, active = true
 
   function exportBom() {
     const rows = [
-      ["Category", "Description", "Quantity", "Unit", "Unit price", "Total"],
-      ...data.prices.map((item) => [item.category, item.name, item.quantity, item.unit, item.unit_price.toFixed(2), (item.quantity * item.unit_price).toFixed(2)]),
-      ["", "Grand total", "", "", "", total.toFixed(2)],
+      [t("Category"), t("Description"), t("Quantity"), t("Unit"), t("Unit price"), t("Total")],
+      ...data.prices.map((item) => [t(item.category), t(item.name), item.quantity, t(item.unit), item.unit_price.toFixed(2), (item.quantity * item.unit_price).toFixed(2)]),
+      ["", t("Grand total"), "", "", "", total.toFixed(2)],
     ];
     const csv = rows.map((row) => row.map(csvCell).join(";")).join("\r\n");
     const url = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" }));
@@ -209,85 +211,85 @@ export function DocumentationPanel({ data, floorName, projectName, active = true
   return (
     <div className={active ? "documentation-panel active" : "documentation-panel inactive"}>
       <header className="circuits-intro">
-        <div><p className="eyebrow">PROJECT DOCUMENTATION</p><h4>Handbook, pricing and verification records</h4><p>Project cover, legends, test values, terminal plans, and materials/pricing are part of the printable handover.</p></div>
-        <div className="workspace-actions"><button type="button" className="button-secondary" onClick={exportBom}>Export BOM CSV</button><button type="button" className="button-primary" onClick={() => window.print()}>Print project handbook / PDF</button></div>
+        <div><p className="eyebrow">{t("PROJECT DOCUMENTATION")}</p><h4>{t("Handbook, pricing and verification records")}</h4><p>{t("Project cover, legends, test values, terminal plans, and materials/pricing are part of the printable handover.")}</p></div>
+        <div className="workspace-actions"><button type="button" className="button-secondary" onClick={exportBom}>{t("Export BOM CSV")}</button><button type="button" className="button-primary" onClick={() => window.print()}>{t("Print project handbook / PDF")}</button></div>
       </header>
       <div className="documentation-grid">
         <section className="documentation-card">
-          <h5>Title block &amp; presentation</h5>
-          <label>Document title<input value={annotation.title} onChange={(event) => updateAnnotation({ title: event.target.value })} /></label>
-          <label>Customer / client<input value={annotation.customer_name} onChange={(event) => updateAnnotation({ customer_name: event.target.value })} /></label>
-          <label>Project number<input value={annotation.project_number} onChange={(event) => updateAnnotation({ project_number: event.target.value })} /></label>
-          <label>Presentation mode<select value={annotation.presentation_mode} onChange={(event) => updateAnnotation({ presentation_mode: event.target.value as ProjectAnnotation["presentation_mode"] })}><option value="planning">Planning / technical</option><option value="client">Client consultation</option></select></label>
-          <label>Legend<textarea rows={4} value={annotation.legend} onChange={(event) => updateAnnotation({ legend: event.target.value })} /></label>
-          <label>Project notes<textarea rows={5} value={annotation.notes} onChange={(event) => updateAnnotation({ notes: event.target.value })} /></label>
+          <h5>{t("Title block & presentation")}</h5>
+          <label>{t("Document title")}<input value={annotation.title} onChange={(event) => updateAnnotation({ title: event.target.value })} /></label>
+          <label>{t("Customer / client")}<input value={annotation.customer_name} onChange={(event) => updateAnnotation({ customer_name: event.target.value })} /></label>
+          <label>{t("Project number")}<input value={annotation.project_number} onChange={(event) => updateAnnotation({ project_number: event.target.value })} /></label>
+          <label>{t("Presentation mode")}<select value={annotation.presentation_mode} onChange={(event) => updateAnnotation({ presentation_mode: event.target.value as ProjectAnnotation["presentation_mode"] })}><option value="planning">{t("Planning / technical")}</option><option value="client">{t("Client consultation")}</option></select></label>
+          <label>{t("Legend")}<textarea rows={4} value={annotation.legend} onChange={(event) => updateAnnotation({ legend: event.target.value })} /></label>
+          <label>{t("Project notes")}<textarea rows={5} value={annotation.notes} onChange={(event) => updateAnnotation({ notes: event.target.value })} /></label>
         </section>
         <section className="documentation-card">
-          <div className="card-title-row"><h5>Verification / test protocol</h5><label className="button-secondary import-file-button">Import protocol CSV<input type="file" accept=".csv,text/csv" onChange={importProtocol} /></label></div>
-          <p className="field-hint">CSV columns: circuit, test, value, unit, limit, result, date, notes. Compatible measurement records can be imported from test systems.</p>
+          <div className="card-title-row"><h5>{t("Verification / test protocol")}</h5><label className="button-secondary import-file-button">{t("Import protocol CSV")}<input type="file" accept=".csv,text/csv" onChange={importProtocol} /></label></div>
+          <p className="field-hint">{t("CSV columns: circuit, test, value, unit, limit, result, date, notes. Compatible measurement records can be imported from test systems.")}</p>
           {importMessage && <p className="editor-status">{importMessage}</p>}
-          <div className="test-summary"><strong>{passed} passed</strong><span>{data.measurements.length - passed} review</span><span>{data.measurements.length} total records</span></div>
+          <div className="test-summary"><strong>{passed} {t("passed")}</strong><span>{data.measurements.length - passed} {t("review")}</span><span>{data.measurements.length} {t("total records")}</span></div>
           <div className="measurement-list">
             {data.measurements.map((item) => (
               <article className={item.passed ? "measurement-row passed" : "measurement-row failed"} key={item.id}>
-                <select aria-label="Measurement type" value={item.kind} onChange={(event) => onChange({ measurements: data.measurements.map((row) => row.id === item.id ? { ...row, kind: event.target.value as TestMeasurement["kind"] } : row) })}>{measurementKinds.map((kind) => <option key={kind}>{kind}</option>)}</select>
-                <select aria-label="Measurement circuit" value={item.circuit_id ?? ""} onChange={(event) => onChange({ measurements: data.measurements.map((row) => row.id === item.id ? { ...row, circuit_id: event.target.value || null } : row) })}><option value="">General</option>{data.circuits.map((circuit) => <option key={circuit.id} value={circuit.id}>{circuit.name}</option>)}</select>
-                <input aria-label="Measured value" type="number" step="any" value={item.measured_value} onChange={(event) => onChange({ measurements: data.measurements.map((row) => row.id === item.id ? { ...row, measured_value: Number(event.target.value) } : row) })} />
-                <input aria-label="Unit" value={item.unit} onChange={(event) => onChange({ measurements: data.measurements.map((row) => row.id === item.id ? { ...row, unit: event.target.value } : row) })} />
-                <input aria-label="Limit value" placeholder="Limit" type="number" step="any" value={item.limit_value ?? ""} onChange={(event) => onChange({ measurements: data.measurements.map((row) => row.id === item.id ? { ...row, limit_value: event.target.value ? Number(event.target.value) : null } : row) })} />
-                <select aria-label="Measurement result" value={item.passed ? "passed" : "review"} onChange={(event) => onChange({ measurements: data.measurements.map((row) => row.id === item.id ? { ...row, passed: event.target.value === "passed" } : row) })}><option value="passed">Pass</option><option value="review">Review</option></select>
-                <button className="icon-button" aria-label="Remove measurement" type="button" onClick={() => onChange({ measurements: data.measurements.filter((row) => row.id !== item.id) })}>×</button>
+                <select aria-label={t("Measurement type")} value={item.kind} onChange={(event) => onChange({ measurements: data.measurements.map((row) => row.id === item.id ? { ...row, kind: event.target.value as TestMeasurement["kind"] } : row) })}>{measurementKinds.map((kind) => <option key={kind} value={kind}>{t(kind)}</option>)}</select>
+                <select aria-label={t("Measurement circuit")} value={item.circuit_id ?? ""} onChange={(event) => onChange({ measurements: data.measurements.map((row) => row.id === item.id ? { ...row, circuit_id: event.target.value || null } : row) })}><option value="">{t("General")}</option>{data.circuits.map((circuit) => <option key={circuit.id} value={circuit.id}>{circuit.name}</option>)}</select>
+                <input aria-label={t("Measured value")} type="number" step="any" value={item.measured_value} onChange={(event) => onChange({ measurements: data.measurements.map((row) => row.id === item.id ? { ...row, measured_value: Number(event.target.value) } : row) })} />
+                <input aria-label={t("Unit")} value={item.unit} onChange={(event) => onChange({ measurements: data.measurements.map((row) => row.id === item.id ? { ...row, unit: event.target.value } : row) })} />
+                <input aria-label={t("Limit value")} placeholder={t("Limit")} type="number" step="any" value={item.limit_value ?? ""} onChange={(event) => onChange({ measurements: data.measurements.map((row) => row.id === item.id ? { ...row, limit_value: event.target.value ? Number(event.target.value) : null } : row) })} />
+                <select aria-label={t("Measurement result")} value={item.passed ? "passed" : "review"} onChange={(event) => onChange({ measurements: data.measurements.map((row) => row.id === item.id ? { ...row, passed: event.target.value === "passed" } : row) })}><option value="passed">{t("Pass")}</option><option value="review">{t("Review")}</option></select>
+                <button className="icon-button" aria-label={t("Remove measurement")} type="button" onClick={() => onChange({ measurements: data.measurements.filter((row) => row.id !== item.id) })}>×</button>
               </article>
             ))}
           </div>
-          <button type="button" className="text-button" onClick={addMeasurement}>＋ Add measurement</button>
+          <button type="button" className="text-button" onClick={addMeasurement}>＋ {t("Add measurement")}</button>
         </section>
       </div>
       <section className="documentation-card">
-        <div className="card-title-row"><h5>Price template &amp; quantity take-off</h5><button type="button" className="button-secondary" onClick={refreshBom}>Refresh quantities from plan</button></div>
-        <p className="field-hint">Enter unit prices for devices, installation labor, and cabling. Quantities are counted from the plan and circuit schedule.</p>
-        <div className="bom-table-wrap"><table className="bom-table"><thead><tr><th>Category</th><th>Description</th><th>Quantity</th><th>Unit</th><th>Unit price</th><th>Line total</th><th /></tr></thead><tbody>
+        <div className="card-title-row"><h5>{t("Price template & quantity take-off")}</h5><button type="button" className="button-secondary" onClick={refreshBom}>{t("Refresh quantities from plan")}</button></div>
+        <p className="field-hint">{t("Enter unit prices for devices, installation labor, and cabling. Quantities are counted from the plan and circuit schedule.")}</p>
+        <div className="bom-table-wrap"><table className="bom-table"><thead><tr><th>{t("Category")}</th><th>{t("Description")}</th><th>{t("Quantity")}</th><th>{t("Unit")}</th><th>{t("Unit price")}</th><th>{t("Line total")}</th><th /></tr></thead><tbody>
           {data.prices.map((item) => <tr key={item.id}>
-            <td><select value={item.category} onChange={(event) => onChange({ prices: data.prices.map((row) => row.id === item.id ? { ...row, category: event.target.value as PriceEntry["category"] } : row) })}><option value="device">Device</option><option value="labor">Labor</option><option value="cable">Cable</option><option value="other">Other</option></select></td>
-            <td><input value={item.name} onChange={(event) => onChange({ prices: data.prices.map((row) => row.id === item.id ? { ...row, name: event.target.value } : row) })} /></td>
+            <td><select value={item.category} onChange={(event) => onChange({ prices: data.prices.map((row) => row.id === item.id ? { ...row, category: event.target.value as PriceEntry["category"] } : row) })}><option value="device">{t("Device")}</option><option value="labor">{t("Labor")}</option><option value="cable">{t("Cable")}</option><option value="other">{t("Other")}</option></select></td>
+            <td><input value={t(item.name)} onChange={(event) => onChange({ prices: data.prices.map((row) => row.id === item.id ? { ...row, name: event.target.value } : row) })} /></td>
             <td><input type="number" min="0" step="any" value={item.quantity} onChange={(event) => onChange({ prices: data.prices.map((row) => row.id === item.id ? { ...row, quantity: Number(event.target.value) } : row) })} /></td>
-            <td><input value={item.unit} onChange={(event) => onChange({ prices: data.prices.map((row) => row.id === item.id ? { ...row, unit: event.target.value } : row) })} /></td>
+            <td><input value={t(item.unit)} onChange={(event) => onChange({ prices: data.prices.map((row) => row.id === item.id ? { ...row, unit: event.target.value } : row) })} /></td>
             <td><input type="number" min="0" step="0.01" value={item.unit_price} onChange={(event) => onChange({ prices: data.prices.map((row) => row.id === item.id ? { ...row, unit_price: Number(event.target.value) } : row) })} /></td>
             <td>{(item.quantity * item.unit_price).toFixed(2)}</td>
-            <td><button className="icon-button" aria-label={`Remove ${item.name}`} type="button" onClick={() => onChange({ prices: data.prices.filter((row) => row.id !== item.id) })}>×</button></td>
+            <td><button className="icon-button" aria-label={t("Remove {{name}}", { name: item.name })} type="button" onClick={() => onChange({ prices: data.prices.filter((row) => row.id !== item.id) })}>×</button></td>
           </tr>)}
-          <tr className="bom-total"><td colSpan={5}>Project total</td><td>{total.toFixed(2)}</td><td /></tr>
+          <tr className="bom-total"><td colSpan={5}>{t("Project total")}</td><td>{total.toFixed(2)}</td><td /></tr>
         </tbody></table></div>
         <form className="manual-price-form" onSubmit={addManualPrice}>
-          <input name="name" required placeholder="Custom item or cabling" />
-          <select name="category"><option value="device">Device</option><option value="labor">Labor</option><option value="cable">Cable</option><option value="other">Other</option></select>
+          <input name="name" required placeholder={t("Custom item or cabling")} />
+          <select name="category"><option value="device">{t("Device")}</option><option value="labor">{t("Labor")}</option><option value="cable">{t("Cable")}</option><option value="other">{t("Other")}</option></select>
           <input name="quantity" type="number" min="0.01" step="any" defaultValue="1" />
-          <input name="unit" defaultValue="piece" />
+          <input name="unit" defaultValue={t("piece")} />
           <input name="price" type="number" min="0" step="0.01" defaultValue="0" />
-          <button type="submit" className="button-secondary">＋ Add price item</button>
+          <button type="submit" className="button-secondary">＋ {t("Add price item")}</button>
         </form>
       </section>
       <section className="documentation-card">
-        <h5>Terminal plan &amp; calculated rail widths</h5>
-        {terminalRows.length === 0 && <p className="empty-panel">Add circuits and their terminal groups appear here automatically.</p>}
+        <h5>{t("Terminal plan & calculated rail widths")}</h5>
+        {terminalRows.length === 0 && <p className="empty-panel">{t("Add circuits and their terminal groups appear here automatically.")}</p>}
         <div className="terminal-plan-list">
           {terminalRows.map((strip) => {
             const width = (strip.circuit_ids.length * strip.terminals_per_circuit + strip.end_brackets + strip.separators) * strip.terminal_width_mm;
-            return <article className="terminal-plan-row" key={strip.id}><strong>{strip.name}</strong><span>{strip.kind}</span><span>{strip.circuit_ids.length * strip.terminals_per_circuit} terminals</span><span>{width.toFixed(1)} mm</span><span>{strip.terminal_width_mm} mm / terminal</span></article>;
+            return             <article className="terminal-plan-row" key={strip.id}><strong>{strip.name}</strong><span>{t(strip.kind)}</span><span>{strip.circuit_ids.length * strip.terminals_per_circuit} {t("Terminals")}</span><span>{width.toFixed(1)} mm</span><span>{strip.terminal_width_mm} mm / {t("terminal")}</span></article>;
           })}
         </div>
       </section>
       <div className="print-handbook">
-        <header className="handbook-cover"><p>ELPLAN · ELECTRICAL PLANNING</p><h1>{annotation.title || projectName}</h1><h2>{floorName}</h2><p>{annotation.customer_name} {annotation.project_number && `· ${annotation.project_number}`}</p></header>
-        {annotation.notes && <section><h2>Project notes</h2><p>{annotation.notes}</p></section>}
-        <section><h2>Floor plan &amp; installation points</h2><svg viewBox="0 0 1000 700" className="handbook-plan">{data.background_image && <image href={data.background_image} width="1000" height="700" preserveAspectRatio="xMidYMid meet" opacity={data.background_opacity} />}{data.rooms.map((room) => <g key={room.id}><rect x={room.x} y={room.y} width={room.width} height={room.height} fill={room.color} fillOpacity=".45" stroke="#68877f" strokeWidth="2" /><text x={room.x + 10} y={room.y + 22}>{room.name}</text></g>)}{data.placements.map((item) => <g key={item.id} transform={`translate(${item.x},${item.y})`}><circle r="13" fill="#fff" stroke={item.color} strokeWidth="2" /><text textAnchor="middle" dominantBaseline="central" fontSize="8">{item.element_id || item.kind.slice(0, 3).toUpperCase()}</text><text y="25" textAnchor="middle" fontSize="9">{item.label}</text></g>)}</svg><p>{data.rooms.length} rooms · {data.placements.length} installation points · scale {data.scale_m_per_100_units ?? "not calibrated"} m / 100 units</p></section>
-        <section><h2>Circuits &amp; protection</h2>{data.rcds.map((rcd, index) => <div key={rcd.id}><h3>F{index + 1} · {rcd.name} · Type {rcd.type} · {rcd.rated_current_ma} mA</h3><table className="handbook-table"><thead><tr><th>Ref.</th><th>Circuit</th><th>MCB</th><th>Supply</th><th>Cable</th><th>Loads</th></tr></thead><tbody>{data.circuits.filter((circuit) => circuit.rcd_id === rcd.id).map((circuit) => <tr key={circuit.id}><td>{circuitNumber(circuit, data.rcds, data.circuits)}</td><td>{circuit.name}</td><td>{circuit.poles}P {circuit.breaker_type}{circuit.rated_current_a}</td><td>{circuit.supply}</td><td>{circuit.cable}</td><td>{circuit.loads.map((loadId) => data.placements.find((item) => item.id === loadId)?.label).filter(Boolean).join(", ")}</td></tr>)}</tbody></table><p>{circuitTotals.get(rcd.id) ?? 0} circuits · X{index + 1} terminal group</p></div>)}</section>
-        <section><h2>Cabinet assembly plan</h2><p>{data.cabinet.name} · {data.cabinet.manufacturer ?? ""} {data.cabinet.model ?? ""} · {data.cabinet.rows} rows × {data.cabinet.columns} TE</p>{data.cabinet.rails.map((rail) => <p key={rail.id}><strong>{rail.name}:</strong> {data.cabinet.modules.filter((module) => module.rail_id === rail.id).sort((a, b) => a.position - b.position).map((module) => `${module.name} (${module.te_width} TE, position ${module.position + 1})`).join(" · ") || "spare space"}</p>)}{data.cabinet.mounting_notes && <p>{data.cabinet.mounting_notes}</p>}</section>
-        <section><h2>Smart building &amp; bus devices</h2>{data.smart_devices.map((device) => <article key={device.id}><h3>{device.system.toUpperCase()} · {device.name}</h3><p>{device.model} {device.line} {device.address}</p>{device.channels.map((channel) => <p key={channel.id}>{channel.name} ({channel.kind}, {channel.address}) → {channel.load_ids.map((id) => data.placements.find((item) => item.id === id)?.label).filter(Boolean).join(", ")}</p>)}</article>)}</section>
-        <section><h2>Terminal plan &amp; bill of materials</h2>{terminalRows.map((strip) => <p key={strip.id}>{strip.name}: {strip.circuit_ids.length * strip.terminals_per_circuit} terminals, {((strip.circuit_ids.length * strip.terminals_per_circuit + strip.end_brackets + strip.separators) * strip.terminal_width_mm).toFixed(1)} mm</p>)}<table className="handbook-table"><thead><tr><th>Item</th><th>Quantity</th><th>Unit price</th><th>Total</th></tr></thead><tbody>{data.prices.map((item) => <tr key={item.id}><td>{item.name}</td><td>{item.quantity} {item.unit}</td><td>{item.unit_price.toFixed(2)}</td><td>{(item.quantity * item.unit_price).toFixed(2)}</td></tr>)}</tbody></table><h3>Total: {total.toFixed(2)}</h3></section>
-        <section><h2>Verification protocol</h2><table className="handbook-table"><thead><tr><th>Circuit</th><th>Test</th><th>Value</th><th>Limit</th><th>Result</th><th>Date</th></tr></thead><tbody>{data.measurements.map((item) => <tr key={item.id}><td>{data.circuits.find((circuit) => circuit.id === item.circuit_id)?.name ?? "General"}</td><td>{item.kind}</td><td>{item.measured_value} {item.unit}</td><td>{item.limit_value ?? "—"}</td><td>{item.passed ? "PASS" : "REVIEW"}</td><td>{item.measured_at}</td></tr>)}</tbody></table></section>
-        {annotation.legend && <section><h2>Legend</h2><p>{annotation.legend}</p></section>}
-        <footer className="handbook-footer">Generated by elplan · {new Date().toLocaleDateString()}</footer>
+        <header className="handbook-cover"><p>{t("ELPLAN · ELECTRICAL PLANNING")}</p><h1>{annotation.title || projectName}</h1><h2>{floorName}</h2><p>{annotation.customer_name} {annotation.project_number && `· ${annotation.project_number}`}</p></header>
+        {annotation.notes && <section><h2>{t("Project notes")}</h2><p>{annotation.notes}</p></section>}
+        <section><h2>{t("Floor plan & installation points")}</h2><svg viewBox="0 0 1000 700" className="handbook-plan">{data.background_image && <image href={data.background_image} width="1000" height="700" preserveAspectRatio="xMidYMid meet" opacity={data.background_opacity} />}{data.rooms.map((room) => <g key={room.id}><rect x={room.x} y={room.y} width={room.width} height={room.height} fill={room.color} fillOpacity=".45" stroke="#68877f" strokeWidth="2" /><text x={room.x + 10} y={room.y + 22}>{room.name}</text></g>)}{data.placements.map((item) => <g key={item.id} transform={`translate(${item.x},${item.y})`}><circle r="13" fill="#fff" stroke={item.color} strokeWidth="2" /><text textAnchor="middle" dominantBaseline="central" fontSize="8">{item.element_id || item.kind.slice(0, 3).toUpperCase()}</text><text y="25" textAnchor="middle" fontSize="9">{item.label}</text></g>)}</svg><p>{data.rooms.length} {t("rooms")} · {data.placements.length} {t("installation points")} · {t("scale")} {data.scale_m_per_100_units ?? t("not calibrated")} m / 100 {t("units")}</p></section>
+        <section><h2>{t("Circuits & protection")}</h2>{data.rcds.map((rcd, index) => <div key={rcd.id}><h3>F{index + 1} · {rcd.name} · {t("Type")} {rcd.type} · {rcd.rated_current_ma} mA</h3><table className="handbook-table"><thead><tr><th>{t("Ref.")}</th><th>{t("Circuit")}</th><th>{t("MCB")}</th><th>{t("Supply")}</th><th>{t("Cable")}</th><th>{t("Loads")}</th></tr></thead><tbody>{data.circuits.filter((circuit) => circuit.rcd_id === rcd.id).map((circuit) => <tr key={circuit.id}><td>{circuitNumber(circuit, data.rcds, data.circuits)}</td><td>{circuit.name}</td><td>{circuit.poles}P {circuit.breaker_type}{circuit.rated_current_a}</td><td>{t(circuit.supply)}</td><td>{circuit.cable}</td><td>{circuit.loads.map((loadId) => data.placements.find((item) => item.id === loadId)?.label).filter(Boolean).join(", ")}</td></tr>)}</tbody></table><p>{circuitTotals.get(rcd.id) ?? 0} {t("circuits")} · X{index + 1} {t("terminal group")}</p></div>)}</section>
+        <section><h2>{t("Cabinet assembly plan")}</h2><p>{t(data.cabinet.name)} · {data.cabinet.manufacturer ?? ""} {data.cabinet.model ?? ""} · {data.cabinet.rows} {t("rows")} × {data.cabinet.columns} TE</p>{data.cabinet.rails.map((rail) => <p key={rail.id}><strong>{t(rail.name)}:</strong> {data.cabinet.modules.filter((module) => module.rail_id === rail.id).sort((a, b) => a.position - b.position).map((module) => t("{{name}} ({{width}} TE, position {{position}})", { name: t(module.name), width: module.te_width, position: module.position + 1 })).join(" · ") || t("spare space")}</p>)}{data.cabinet.mounting_notes && <p>{data.cabinet.mounting_notes}</p>}</section>
+        <section><h2>{t("Smart building & bus devices")}</h2>{data.smart_devices.map((device) => <article key={device.id}><h3>{device.system.toUpperCase()} · {device.name}</h3><p>{device.model} {device.line} {device.address}</p>{device.channels.map((channel) => <p key={channel.id}>{channel.name} ({t(channel.kind)}, {channel.address}) → {channel.load_ids.map((id) => data.placements.find((item) => item.id === id)?.label).filter(Boolean).join(", ")}</p>)}</article>)}</section>
+        <section><h2>{t("Terminal plan & bill of materials")}</h2>{terminalRows.map((strip) => <p key={strip.id}>{strip.name}: {strip.circuit_ids.length * strip.terminals_per_circuit} {t("Terminals")}, {((strip.circuit_ids.length * strip.terminals_per_circuit + strip.end_brackets + strip.separators) * strip.terminal_width_mm).toFixed(1)} mm</p>)}<table className="handbook-table"><thead><tr><th>{t("Item")}</th><th>{t("Quantity")}</th><th>{t("Unit price")}</th><th>{t("Total")}</th></tr></thead><tbody>{data.prices.map((item) => <tr key={item.id}><td>{item.name}</td><td>{item.quantity} {t(item.unit)}</td><td>{item.unit_price.toFixed(2)}</td><td>{(item.quantity * item.unit_price).toFixed(2)}</td></tr>)}</tbody></table><h3>{t("Total")}: {total.toFixed(2)}</h3></section>
+        <section><h2>{t("Verification protocol")}</h2><table className="handbook-table"><thead><tr><th>{t("Circuit")}</th><th>{t("Test")}</th><th>{t("Value")}</th><th>{t("Limit")}</th><th>{t("Result")}</th><th>{t("Date")}</th></tr></thead><tbody>{data.measurements.map((item) => <tr key={item.id}><td>{data.circuits.find((circuit) => circuit.id === item.circuit_id)?.name ?? t("General")}</td><td>{t(item.kind)}</td><td>{item.measured_value} {item.unit}</td><td>{item.limit_value ?? "—"}</td><td>{item.passed ? t("PASS") : t("REVIEW")}</td><td>{item.measured_at}</td></tr>)}</tbody></table></section>
+        {annotation.legend && <section><h2>{t("Legend")}</h2><p>{annotation.legend}</p></section>}
+        <footer className="handbook-footer">{t("Generated by elplan · {{date}}", { date: new Date().toLocaleDateString() })}</footer>
       </div>
     </div>
   );

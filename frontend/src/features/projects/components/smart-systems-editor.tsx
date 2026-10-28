@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { DeviceChannel, FloorPlanData, PlanPlacement, SmartDevice } from "../api";
+import { useI18n } from "../../../i18n";
 
 type Props = { data: FloorPlanData; onChange: (patch: Partial<FloorPlanData>) => void };
 type Preset = Pick<SmartDevice, "system" | "kind" | "name" | "te_width">;
@@ -33,12 +34,14 @@ function makeId() {
 }
 
 export function SmartSystemsEditor({ data, onChange }: Props) {
+  const { t } = useI18n();
   const [selectedPreset, setSelectedPreset] = useState(0);
 
   function addDevice(preset = presets[selectedPreset]) {
     const device: SmartDevice = {
       id: makeId(),
       ...preset,
+      name: t(preset.name),
       model: null,
       line: preset.system === "knx" ? "1.1" : null,
       address: null,
@@ -69,7 +72,7 @@ export function SmartSystemsEditor({ data, onChange }: Props) {
   function addChannel(device: SmartDevice, kind: DeviceChannel["kind"]) {
     const channel: DeviceChannel = {
       id: makeId(),
-      name: `${kind.replace("_", " ")} ${device.channels.length + 1}`,
+      name: `${t(kind.replace("_", " "))} ${device.channels.length + 1}`,
       kind,
       address: null,
       load_ids: [],
@@ -190,48 +193,48 @@ export function SmartSystemsEditor({ data, onChange }: Props) {
     <div className="smart-systems">
       <header className="circuits-intro">
         <div>
-          <p className="eyebrow">SMART BUILDING &amp; BUS SYSTEMS</p>
-          <h4>Devices, bus lines and channel mapping</h4>
-          <p>Link channels to floor-plan loads and protection circuits. Address and load assignments stay synchronized.</p>
+          <p className="eyebrow">{t("SMART BUILDING & BUS SYSTEMS")}</p>
+          <h4>{t("Devices, bus lines and channel mapping")}</h4>
+          <p>{t("Link channels to floor-plan loads and protection circuits. Address and load assignments stay synchronized.")}</p>
         </div>
       </header>
       <div className="system-summary">
         {["knx", "loxone", "dali", "free_at_home", "homematic", "ekey", "gira_door"].map((system) => (
-          <span key={system}><strong>{systemCounts[system] ?? 0}</strong> {system.replace(/_/g, " ")}</span>
+          <span key={system}><strong>{systemCounts[system] ?? 0}</strong> {t(system.replace(/_/g, " "))}</span>
         ))}
       </div>
       <div className="smart-add-row">
         <select value={selectedPreset} onChange={(event) => setSelectedPreset(Number(event.target.value))}>
-          {presets.map((preset, index) => <option key={`${preset.system}-${preset.name}`} value={index}>{preset.system.toUpperCase()} · {preset.name} · {preset.te_width} TE</option>)}
+          {presets.map((preset, index) => <option key={`${preset.system}-${preset.name}`} value={index}>{preset.system.toUpperCase()} · {t(preset.name)} · {preset.te_width} TE</option>)}
         </select>
-        <button type="button" className="button-primary" onClick={() => addDevice()}>＋ Add smart device</button>
+        <button type="button" className="button-primary" onClick={() => addDevice()}>＋ {t("Add smart device")}</button>
       </div>
-      {data.smart_devices.length === 0 && <div className="empty-panel">Add a KNX, Loxone, DALI, free@home, Homematic, ekey, or Gira device to define its channels.</div>}
+      {data.smart_devices.length === 0 && <div className="empty-panel">{t("Add a KNX, Loxone, DALI, free@home, Homematic, ekey, or Gira device to define its channels.")}</div>}
       <div className="smart-device-list">
         {data.smart_devices.map((device) => (
           <article className="smart-device-card" key={device.id}>
             <header className="smart-device-heading">
               <span className="system-tag" style={{ backgroundColor: `${device.color}20`, color: device.color }}>{device.system.toUpperCase()}</span>
-              <input aria-label="Smart device name" value={device.name} onChange={(event) => updateDevice(device.id, { name: event.target.value })} />
+              <input aria-label={t("Smart device name")} value={t(device.name)} onChange={(event) => updateDevice(device.id, { name: event.target.value })} />
               <span className="te-label">{device.te_width || "—"} TE</span>
-              <button type="button" className="icon-button" aria-label={`Remove ${device.name}`} onClick={() => deleteDevice(device.id)}>×</button>
+              <button type="button" className="icon-button" aria-label={t("Remove {{name}}", { name: device.name })} onClick={() => deleteDevice(device.id)}>×</button>
             </header>
             <div className="smart-device-meta">
-              <label>Product / model<input value={device.model ?? ""} placeholder="Optional" onChange={(event) => updateDevice(device.id, { model: event.target.value || null })} /></label>
-              <label>Bus / line<input value={device.line ?? ""} placeholder="e.g. 1.1" onChange={(event) => updateDevice(device.id, { line: event.target.value || null })} /></label>
-              <label>Physical address<input value={device.address ?? ""} placeholder="e.g. 1.1.10" onChange={(event) => updateDevice(device.id, { address: event.target.value || null })} /></label>
-              <label>Bus / power supply<input value={device.bus_id ?? ""} placeholder="Line or bus" onChange={(event) => updateDevice(device.id, { bus_id: event.target.value || null })} /></label>
+              <label>{t("Product / model")}<input value={device.model ?? ""} placeholder={t("Optional")} onChange={(event) => updateDevice(device.id, { model: event.target.value || null })} /></label>
+              <label>{t("Bus / line")}<input value={device.line ?? ""} placeholder={t("e.g. 1.1")} onChange={(event) => updateDevice(device.id, { line: event.target.value || null })} /></label>
+              <label>{t("Physical address")}<input value={device.address ?? ""} placeholder={t("e.g. 1.1.10")} onChange={(event) => updateDevice(device.id, { address: event.target.value || null })} /></label>
+              <label>{t("Bus / power supply")}<input value={device.bus_id ?? ""} placeholder={t("Line or bus")} onChange={(event) => updateDevice(device.id, { bus_id: event.target.value || null })} /></label>
             </div>
-            <div className="channel-heading"><strong>Channels ({device.channels.length})</strong><span>Link outputs to room symbols and circuits</span></div>
+            <div className="channel-heading"><strong>{t("Channels ({{count}})", { count: device.channels.length })}</strong><span>{t("Link outputs to room symbols and circuits")}</span></div>
             {device.channels.map((channel) => (
               <div className="channel-row" key={channel.id}>
-                <input aria-label="Channel name" value={channel.name} onChange={(event) => updateChannel(device, channel.id, { name: event.target.value })} />
-                <select aria-label="Channel function" value={channel.kind} onChange={(event) => updateChannel(device, channel.id, { kind: event.target.value as DeviceChannel["kind"] })}>
-                  {channelTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+                <input aria-label={t("Channel name")} value={channel.name} onChange={(event) => updateChannel(device, channel.id, { name: event.target.value })} />
+                <select aria-label={t("Channel function")} value={channel.kind} onChange={(event) => updateChannel(device, channel.id, { kind: event.target.value as DeviceChannel["kind"] })}>
+                  {channelTypes.map((type) => <option key={type} value={type}>{t(type)}</option>)}
                 </select>
-                <input aria-label="Channel address" placeholder="Address" value={channel.address ?? ""} onChange={(event) => updateChannel(device, channel.id, { address: event.target.value || null })} />
+                <input aria-label={t("Channel address")} placeholder={t("Address")} value={channel.address ?? ""} onChange={(event) => updateChannel(device, channel.id, { address: event.target.value || null })} />
                 <select
-                  aria-label="Channel loads"
+                  aria-label={t("Channel loads")}
                   multiple
                   size={Math.min(Math.max(data.placements.length, 2), 3)}
                   value={channel.load_ids}
@@ -239,20 +242,20 @@ export function SmartSystemsEditor({ data, onChange }: Props) {
                 >
                   {data.placements.map((placement: PlanPlacement) => <option key={placement.id} value={placement.id}>{placement.label}</option>)}
                 </select>
-                <select aria-label="Channel circuit" value={channel.circuit_id ?? ""} onChange={(event) => updateChannel(device, channel.id, { circuit_id: event.target.value || null })}>
-                  <option value="">No circuit</option>
+                <select aria-label={t("Channel circuit")} value={channel.circuit_id ?? ""} onChange={(event) => updateChannel(device, channel.id, { circuit_id: event.target.value || null })}>
+                  <option value="">{t("No circuit")}</option>
                   {data.circuits.map((circuit) => <option key={circuit.id} value={circuit.id}>{circuit.name}</option>)}
                 </select>
-                <button type="button" className="icon-button" aria-label={`Remove channel ${channel.name}`} onClick={() => deleteChannel(device, channel.id)}>×</button>
+                <button type="button" className="icon-button" aria-label={t("Remove channel {{name}}", { name: channel.name })} onClick={() => deleteChannel(device, channel.id)}>×</button>
               </div>
             ))}
             <div className="channel-add-buttons">
-              {channelTypes.map((kind) => <button type="button" key={kind} className="text-button" onClick={() => addChannel(device, kind)}>＋ {kind}</button>)}
+              {channelTypes.map((kind) => <button type="button" key={kind} className="text-button" onClick={() => addChannel(device, kind)}>＋ {t(kind)}</button>)}
             </div>
           </article>
         ))}
       </div>
-      <div className="empty-panel">Bus loads linked to channel assignments are reflected on the floor plan and in the distribution circuit documentation.</div>
+      <div className="empty-panel">{t("Bus loads linked to channel assignments are reflected on the floor plan and in the distribution circuit documentation.")}</div>
     </div>
   );
 }

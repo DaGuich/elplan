@@ -7,6 +7,7 @@ import {
   CustomComponent,
   FloorPlanData,
 } from "../api";
+import { useI18n } from "../../../i18n";
 
 type Props = { data: FloorPlanData; onChange: (patch: Partial<FloorPlanData>) => void };
 type CatalogItem = { id: string; name: string; width: number; color: string };
@@ -15,10 +16,10 @@ function makeId() {
   return globalThis.crypto?.randomUUID?.() ?? `module-${Date.now()}-${Math.random()}`;
 }
 
-function defaultRails(rows: number, columns: number): CabinetRail[] {
+function defaultRails(rows: number, columns: number, rowLabel: string): CabinetRail[] {
   return Array.from({ length: rows }, (_, index) => ({
     id: `rail-${index + 1}`,
-    name: `Row ${index + 1}`,
+    name: `${rowLabel} ${index + 1}`,
     modules: columns,
     height_mm: 0,
     spacing_mm: 125,
@@ -26,11 +27,12 @@ function defaultRails(rows: number, columns: number): CabinetRail[] {
 }
 
 export function CabinetEditor({ data, onChange }: Props) {
+  const { t } = useI18n();
   const [customName, setCustomName] = useState("");
   const [customWidth, setCustomWidth] = useState(1);
   const [draggedModuleId, setDraggedModuleId] = useState<string>();
   const cabinet = data.cabinet;
-  const rails = cabinet.rails.length ? cabinet.rails : defaultRails(cabinet.rows, cabinet.columns);
+  const rails = cabinet.rails.length ? cabinet.rails : defaultRails(cabinet.rows, cabinet.columns, t("Row"));
 
   const catalog = useMemo<CatalogItem[]>(() => [
     ...data.rcds.map((item) => ({ id: item.id, name: item.name, width: item.poles === 4 ? 4 : 2, color: "#b9d8ce" })),
@@ -122,7 +124,7 @@ export function CabinetEditor({ data, onChange }: Props) {
   }
 
   function resizeRows(rows: number) {
-    const nextRails = defaultRails(rows, cabinet.columns).map((rail) => {
+    const nextRails = defaultRails(rows, cabinet.columns, t("Row")).map((rail) => {
       const existing = rails.find((item) => item.id === rail.id);
       return existing ? { ...existing, modules: cabinet.columns } : rail;
     });
@@ -174,34 +176,34 @@ export function CabinetEditor({ data, onChange }: Props) {
   return (
     <div className="cabinet-layout">
       <aside className="cabinet-controls">
-        <p className="eyebrow">ENCLOSURE</p>
-        <label className="field-label">Board name<input value={cabinet.name} onChange={(event) => updateCabinet({ name: event.target.value })} /></label>
-        <label className="field-label">Manufacturer<input value={cabinet.manufacturer ?? ""} placeholder="Manufacturer" onChange={(event) => updateCabinet({ manufacturer: event.target.value || null })} /></label>
-        <label className="field-label">Model<input value={cabinet.model ?? ""} placeholder="Enclosure model" onChange={(event) => updateCabinet({ model: event.target.value || null })} /></label>
-        <label className="field-label">DIN rails / rows<input type="number" min={1} max={24} value={cabinet.rows} onChange={(event) => resizeRows(Math.max(1, Number(event.target.value)))} /></label>
-        <label className="field-label">TE per rail<input type="number" min={1} max={72} value={cabinet.columns} onChange={(event) => resizeColumns(Math.max(1, Number(event.target.value)))} /></label>
-        <label className="field-label">Drawing page<select value={cabinet.page_size} onChange={(event) => updateCabinet({ page_size: event.target.value as CabinetConfiguration["page_size"] })}><option>A4</option><option>A3</option><option>A2</option><option value="custom">Custom</option></select></label>
-        <label className="field-label">Spare TE per rail<input type="number" min={0} max={72} value={cabinet.spare_modules_per_rail} onChange={(event) => updateCabinet({ spare_modules_per_rail: Number(event.target.value) })} /></label>
-        <label className="field-label">Mounting notes<textarea rows={3} value={cabinet.mounting_notes} onChange={(event) => updateCabinet({ mounting_notes: event.target.value, rows: cabinet.rows, columns: cabinet.columns, rails })} /></label>
-        <button type="button" className="button-primary" onClick={arrangeAutomatically}>Auto-arrange devices</button>
+        <p className="eyebrow">{t("ENCLOSURE")}</p>
+        <label className="field-label">{t("Board name")}<input value={cabinet.name} onChange={(event) => updateCabinet({ name: event.target.value })} /></label>
+        <label className="field-label">{t("Manufacturer")}<input value={cabinet.manufacturer ?? ""} placeholder={t("Manufacturer")} onChange={(event) => updateCabinet({ manufacturer: event.target.value || null })} /></label>
+        <label className="field-label">{t("Model")}<input value={cabinet.model ?? ""} placeholder={t("Enclosure model")} onChange={(event) => updateCabinet({ model: event.target.value || null })} /></label>
+        <label className="field-label">{t("DIN rails / rows")}<input type="number" min={1} max={24} value={cabinet.rows} onChange={(event) => resizeRows(Math.max(1, Number(event.target.value)))} /></label>
+        <label className="field-label">{t("TE per rail")}<input type="number" min={1} max={72} value={cabinet.columns} onChange={(event) => resizeColumns(Math.max(1, Number(event.target.value)))} /></label>
+        <label className="field-label">{t("Drawing page")}<select value={cabinet.page_size} onChange={(event) => updateCabinet({ page_size: event.target.value as CabinetConfiguration["page_size"] })}><option>A4</option><option>A3</option><option>A2</option><option value="custom">{t("Custom")}</option></select></label>
+        <label className="field-label">{t("Spare TE per rail")}<input type="number" min={0} max={72} value={cabinet.spare_modules_per_rail} onChange={(event) => updateCabinet({ spare_modules_per_rail: Number(event.target.value) })} /></label>
+        <label className="field-label">{t("Mounting notes")}<textarea rows={3} value={cabinet.mounting_notes} onChange={(event) => updateCabinet({ mounting_notes: event.target.value, rows: cabinet.rows, columns: cabinet.columns, rails })} /></label>
+        <button type="button" className="button-primary" onClick={arrangeAutomatically}>{t("Auto-arrange devices")}</button>
         <div className="sidebar-divider" />
-        <p className="eyebrow">COMPONENT LIBRARY · CUSTOM REG</p>
+        <p className="eyebrow">{t("COMPONENT LIBRARY · CUSTOM REG")}</p>
         {catalog.map((item) => (
           <div className="catalog-item" key={`${item.id}-${item.name}`}>
-            <span className="catalog-chip" style={{ backgroundColor: item.color }}>{item.width} TE</span><span>{item.name}</span>
-            <button type="button" className="icon-button" aria-label={`Add ${item.name} to DIN rail`} onClick={() => addCatalogItem(item)}>＋</button>
+            <span className="catalog-chip" style={{ backgroundColor: item.color }}>{item.width} TE</span><span>{t(item.name)}</span>
+            <button type="button" className="icon-button" aria-label={t("Add {{name}} to DIN rail", { name: item.name })} onClick={() => addCatalogItem(item)}>＋</button>
           </div>
         ))}
         <form className="custom-component-form" onSubmit={addCustomComponent}>
-          <label className="field-label">Custom module name<input required value={customName} onChange={(event) => setCustomName(event.target.value)} /></label>
-          <label className="field-label">Width (TE)<input type="number" min="0.5" max="72" step="0.5" value={customWidth} onChange={(event) => setCustomWidth(Number(event.target.value))} /></label>
-          <button type="submit" className="button-secondary">Save custom REG module</button>
+          <label className="field-label">{t("Custom module name")}<input required value={customName} onChange={(event) => setCustomName(event.target.value)} /></label>
+          <label className="field-label">{t("Width (TE)")}<input type="number" min="0.5" max="72" step="0.5" value={customWidth} onChange={(event) => setCustomWidth(Number(event.target.value))} /></label>
+          <button type="submit" className="button-secondary">{t("Save custom REG module")}</button>
         </form>
       </aside>
       <div className="cabinet-canvas-column">
         <header className="cabinet-summary">
-          <div><p className="eyebrow">ASSEMBLY PLAN</p><h4>{cabinet.name}</h4></div>
-          <span>{cabinet.rows} rails · {cabinet.columns} TE each</span>
+          <div><p className="eyebrow">{t("ASSEMBLY PLAN")}</p><h4>{t(cabinet.name)}</h4></div>
+          <span>{cabinet.rows} {t("rails")} · {cabinet.columns} TE {t("each")}</span>
         </header>
         <div className="cabinet-canvas">
           {rails.map((rail) => {
@@ -211,7 +213,7 @@ export function CabinetEditor({ data, onChange }: Props) {
               <section key={rail.id} className="rail-section">
                 <header className="rail-heading">
                   <strong>{rail.name}</strong>
-                  <span>{used.toFixed(1)} / {rail.modules} TE used · {Math.max(0, rail.modules - used).toFixed(1)} free · {Math.min(cabinet.spare_modules_per_rail, Math.max(0, rail.modules - used))} TE spare target</span>
+                  <span>{used.toFixed(1)} / {rail.modules} TE {t("used")} · {Math.max(0, rail.modules - used).toFixed(1)} {t("free")} · {Math.min(cabinet.spare_modules_per_rail, Math.max(0, rail.modules - used))} TE {t("spare target")}</span>
                 </header>
                 <div className="din-rail" style={{ gridTemplateColumns: `repeat(${rail.modules}, minmax(13px, 1fr))` }}>
                   {Array.from({ length: rail.modules }, (_, index) => (
@@ -219,7 +221,7 @@ export function CabinetEditor({ data, onChange }: Props) {
                       type="button"
                       key={index}
                       className="te-slot"
-                      aria-label={`${rail.name} position ${index + 1}`}
+                      aria-label={t("{{name}} position {{number}}", { name: rail.name, number: index + 1 })}
                       onDragOver={(event) => event.preventDefault()}
                       onDrop={(event) => { event.preventDefault(); if (draggedModuleId) moveModule(draggedModuleId, rail.id, index); }}
                     />
@@ -236,8 +238,8 @@ export function CabinetEditor({ data, onChange }: Props) {
                         backgroundColor: module.color,
                       }}
                     >
-                      <strong>{module.name}</strong><small>{module.te_width} TE</small>
-                      <button type="button" aria-label={`Remove ${module.name} from rail`} onClick={() => updateCabinet({ modules: cabinet.modules.filter((item) => item.id !== module.id) })}>×</button>
+                      <strong>{t(module.name)}</strong><small>{module.te_width} TE</small>
+                      <button type="button" aria-label={t("Remove {{name}} from rail", { name: module.name })} onClick={() => updateCabinet({ modules: cabinet.modules.filter((item) => item.id !== module.id) })}>×</button>
                     </div>
                   ))}
                 </div>
@@ -246,9 +248,9 @@ export function CabinetEditor({ data, onChange }: Props) {
           })}
         </div>
         <div className="terminal-sizing">
-          <strong>Terminal strip sizing</strong>
-          <span>{data.terminal_strips.length ? `${terminalWidth.toFixed(1)} mm configured` : `${automaticTerminalWidth.toFixed(1)} mm estimated`}</span>
-          <span>3 terminals per outgoing circuit · 5.2 mm per terminal · end brackets included</span>
+          <strong>{t("Terminal strip sizing")}</strong>
+          <span>{data.terminal_strips.length ? `${terminalWidth.toFixed(1)} mm ${t("configured")}` : `${automaticTerminalWidth.toFixed(1)} mm ${t("estimated")}`}</span>
+          <span>{t("3 terminals per outgoing circuit · 5.2 mm per terminal · end brackets included")}</span>
         </div>
       </div>
     </div>
