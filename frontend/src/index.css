@@ -1494,10 +1494,40 @@ select:focus {
 
 .project-management-card {
   margin-bottom: 12px;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .project-management-card h3 {
   margin-top: 0;
+}
+
+.project-management-card input,
+.project-management-card textarea {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.project-management-card .button-row,
+.project-management-card .transfer-form {
+  flex-wrap: wrap;
+}
+
+.project-management-card .import-file-button {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.project-management-card .import-file-button input {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.project-management-card .transfer-form label {
+  flex: 1 1 100px;
+  min-width: 0;
 }
 
 .floor-management-row .floor-option {
