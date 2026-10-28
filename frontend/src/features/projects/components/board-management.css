@@ -1,0 +1,86 @@
+.board-management {
+  display: grid;
+  gap: 1rem;
+  border: 1px solid #dce4ec;
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 1rem;
+}
+
+.board-management__header,
+.board-management__item,
+.board-management__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.board-management__header p,
+.board-management__empty,
+.board-management__status {
+  margin: 0.3rem 0 0;
+  color: #5b6979;
+  font-size: 0.875rem;
+}
+
+.board-management__list {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.board-management__item {
+  border: 1px solid #dce4ec;
+  border-radius: 0.55rem;
+  padding: 0.75rem;
+}
+
+.board-management__details {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 12rem;
+}
+
+.board-management__details span {
+  color: #5b6979;
+  font-size: 0.85rem;
+}
+
+.board-management__form {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid #dce4ec;
+  border-radius: 0.6rem;
+  background: #f8fafc;
+  padding: 0.9rem;
+}
+
+.board-management__form label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.board-management__actions {
+  justify-content: flex-start;
+}
+
+.board-management__delete {
+  color: #9c2929;
+}
+
+.board-management__error {
+  margin: 0;
+  color: #a52e2e;
+}
+
+@media (max-width: 600px) {
+  .board-management__item {
+    align-items: flex-start;
+  }
+}

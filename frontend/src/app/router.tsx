@@ -3,6 +3,7 @@ import { AuthGate } from "../features/auth/auth-gate";
 import { OrganizationsPage } from "../features/organizations/routes/organizations";
 import { ProjectsListPage } from "../features/projects/routes/projects-list";
 import { ProjectDetailPage } from "../features/projects/routes/project-detail";
+import { ProjectDetailsPage } from "../features/projects/routes/project-details";
 import { PublicSharePage } from "../features/projects/routes/public-share";
 import { LanguageSelect, useI18n } from "../i18n";
 
@@ -42,7 +43,17 @@ const projectsRoute = createRoute({
 const projectDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/projects/$projectId",
+  validateSearch: (search: Record<string, unknown>): { floor?: number } => {
+    const floor = Number(search.floor);
+    return Number.isInteger(floor) && floor > 0 ? { floor } : {};
+  },
   component: ProjectDetailPage,
+});
+
+const projectDetailsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectId/details",
+  component: ProjectDetailsPage,
 });
 
 const organizationsRoute = createRoute({
@@ -57,6 +68,6 @@ const publicShareRoute = createRoute({
   component: PublicSharePage,
 });
 
-const routeTree = rootRoute.addChildren([projectsRoute, projectDetailRoute, organizationsRoute, publicShareRoute]);
+const routeTree = rootRoute.addChildren([projectsRoute, projectDetailRoute, projectDetailsRoute, organizationsRoute, publicShareRoute]);
 
 export const router = createRouter({ routeTree });

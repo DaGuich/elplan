@@ -4,7 +4,7 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir uv
 COPY pyproject.toml /app/pyproject.toml
-RUN uv pip install --system fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" alembic pydantic pydantic-settings python-multipart pyjwt "email-validator" httpx
+RUN uv pip install --system fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" alembic pydantic pydantic-settings python-multipart pyjwt "email-validator" httpx boto3
 
 COPY . /app
 

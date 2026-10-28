@@ -1,4 +1,4 @@
-import { api } from "../../lib/api-client";
+import { api, tokenStore } from "../../lib/api-client";
 
 export type Project = {
   id: number;
@@ -7,6 +7,42 @@ export type Project = {
   name: string;
   description?: string | null;
   archived: boolean;
+};
+
+export const PROJECT_STATUSES = ["draft", "planning", "quoted", "in_progress", "completed", "on_hold"] as const;
+export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+export const GRID_SYSTEMS = ["TN-S", "TN-C", "TN-C-S", "TT", "IT"] as const;
+export type GridSystem = (typeof GRID_SYSTEMS)[number];
+
+export type PricingTemplate = {
+  name: string;
+  unit: string;
+  unit_price: number;
+  description?: string | null;
+};
+
+export type ProjectDetails = {
+  status: ProjectStatus;
+  project_number: string | null;
+  client_name: string | null;
+  client_email: string | null;
+  client_phone: string | null;
+  client_address: string | null;
+  site_street: string | null;
+  site_postal_code: string | null;
+  site_city: string | null;
+  site_country: string | null;
+  nominal_voltage_v: number | null;
+  phases: 1 | 3 | null;
+  frequency_hz: 50 | 60 | null;
+  grid_system: GridSystem | null;
+  main_fuse_a: number | null;
+  short_circuit_ka: number | null;
+  currency: string;
+  vat_percent: number | null;
+  hourly_rate: number | null;
+  material_markup_percent: number;
+  pricing_templates: PricingTemplate[];
 };
 
 export type ProjectCreate = {
@@ -29,13 +65,25 @@ export type Building = {
   floors: Floor[];
 };
 
+export type TopologyPlacement = {
+  id: string;
+  floor_id: number;
+  floor_name: string;
+  label: string;
+};
+
 export type ProjectShare = { id: number; token: string; client_view: boolean };
 export type SharedProject = {
   name: string;
   description: string | null;
   buildings: {
     name: string;
-    floors: { id: number; name: string; plan_data: FloorPlanData }[];
+    floors: {
+      id: number;
+      name: string;
+      plan_data: FloorPlanData;
+      blueprint: { content_type: string; pdf_page: number; version: number } | null;
+    }[];
   }[];
 };
 
@@ -53,6 +101,13 @@ export type RoomPlanItem = {
   height: number;
   color: string;
   layer_id: string;
+  /** Optional closed outline; x/y/width/height always mirror its bounding box. Absent = rectangle. */
+  polygon?: [number, number][] | null;
+  holes?: [number, number][][];
+  source?: "manual" | "detected";
+  needs_review?: boolean;
+  room_type?: string | null;
+  installation_standard?: string | null;
 };
 
 export type PlacementKind =
@@ -221,6 +276,7 @@ export type ProjectAnnotation = {
 
 export type ResidualCurrentDevice = {
   id: string;
+  board_id?: number | null;
   name: string;
   rated_current_ma: number;
   poles: 2 | 4;
@@ -243,10 +299,13 @@ export type ElectricalCircuit = {
 };
 
 export type FloorPlanData = {
+  topology_revision: number;
+  topology_warnings?: string[];
   background_image: string | null;
   background_opacity: number;
   background_rotation: number;
   image_crop: [number, number, number, number] | null;
+  image_crop_reference?: [number, number, number, number] | null;
   scale_m_per_100_units: number | null;
   rooms: RoomPlanItem[];
   placements: PlanPlacement[];
@@ -266,7 +325,21 @@ export type FloorPlanData = {
   annotation: ProjectAnnotation;
 };
 
+async function floorPlanRequest(path: string, init?: RequestInit): Promise<FloorPlanData> {
+  let header: string | null = null;
+  const plan = await api<FloorPlanData>(path, init, (response) => {
+    header = response.headers.get("X-Topology-Warnings");
+  });
+  if (!header) return { ...plan, topology_warnings: [] };
+  const warnings: unknown = JSON.parse(header);
+  if (!Array.isArray(warnings) || !warnings.every((warning) => typeof warning === "string")) {
+    throw new Error("Invalid topology warning response");
+  }
+  return { ...plan, topology_warnings: warnings };
+}
+
 export const emptyFloorPlan: FloorPlanData = {
+  topology_revision: 0,
   background_image: null,
   background_opacity: 0.8,
   background_rotation: 0,
@@ -322,7 +395,12 @@ export const projectsApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  details: (projectId: number) => api<ProjectDetails>(`/projects/${projectId}/details`),
+  updateDetails: (projectId: number, payload: ProjectDetails) =>
+    api<ProjectDetails>(`/projects/${projectId}/details`, { method: "PUT", body: JSON.stringify(payload) }),
   buildings: (projectId: number) => api<Building[]>(`/projects/${projectId}/buildings`),
+  topologyPlacements: (projectId: number) =>
+    api<TopologyPlacement[]>(`/projects/${projectId}/topology/placements`),
   createBuilding: (projectId: number, payload: BuildingCreate) =>
     api<Building>(`/projects/${projectId}/buildings`, {
       method: "POST",
@@ -349,12 +427,44 @@ export const projectsApi = {
       body: JSON.stringify({ organization_id: organizationId, team_id: teamId }),
     }),
   floorPlan: (projectId: number, floorId: number) =>
-    api<FloorPlanData>(`/projects/${projectId}/floors/${floorId}/plan`),
+    floorPlanRequest(`/projects/${projectId}/floors/${floorId}/plan`),
   saveFloorPlan: (projectId: number, floorId: number, payload: FloorPlanData) =>
-    api<FloorPlanData>(`/projects/${projectId}/floors/${floorId}/plan`, {
+    floorPlanRequest(`/projects/${projectId}/floors/${floorId}/plan`, {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
+  blueprint: (projectId: number, floorId: number) =>
+    api<Blueprint>(`/projects/${projectId}/floors/${floorId}/blueprint`),
+  uploadBlueprint: (projectId: number, floorId: number, file: Blob, filename: string, replace: boolean) => {
+    const form = new FormData();
+    form.append("file", file, filename);
+    return api<Blueprint>(`/projects/${projectId}/floors/${floorId}/blueprint`, {
+      method: replace ? "PUT" : "POST",
+      body: form,
+    });
+  },
+  blueprintContent: async (projectId: number, floorId: number): Promise<Blob> => {
+    const token = tokenStore.get();
+    const response = await fetch(`/api/v1/projects/${projectId}/floors/${floorId}/blueprint/content`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return response.blob();
+  },
+  setBlueprintPage: (projectId: number, floorId: number, pdfPage: number) =>
+    api<Blueprint>(`/projects/${projectId}/floors/${floorId}/blueprint/calibration`, {
+      method: "PATCH",
+      body: JSON.stringify({ pdf_page: pdfPage }),
+    }),
+  sharedBlueprintContent: async (token: string, floorId: number, password?: string): Promise<Blob> => {
+    const response = await fetch(`/api/v1/projects/shared/${token}/floors/${floorId}/blueprint/content`, {
+      headers: password ? { "X-Share-Password": password } : {},
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return response.blob();
+  },
+  deleteBlueprint: (projectId: number, floorId: number) =>
+    api<void>(`/projects/${projectId}/floors/${floorId}/blueprint`, { method: "DELETE" }),
   updateBuilding: (projectId: number, buildingId: number, name: string) =>
     api<Building>(`/projects/${projectId}/buildings/${buildingId}`, { method: "PATCH", body: JSON.stringify({ name }) }),
   deleteBuilding: (projectId: number, buildingId: number) =>
@@ -369,4 +479,15 @@ export const projectsApi = {
     api<void>(`/projects/${projectId}/floors/${floorId}`, { method: "DELETE" }),
   sharedProject: (token: string, password?: string) =>
     api<SharedProject>(`/projects/shared/${token}`, password ? { headers: { "X-Share-Password": password } } : undefined),
+};
+
+export type Blueprint = {
+  id: number;
+  floor_id: number;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  sha256: string;
+  version: number;
+  pdf_page: number;
 };

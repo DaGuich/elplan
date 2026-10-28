@@ -1,4 +1,5 @@
 import { ChangeEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { GlobalWorkerOptions, getDocument, PDFDocumentProxy } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
@@ -14,12 +15,41 @@ import {
   RoomPlanItem,
   TerminalStrip,
   emptyFloorPlan,
+  projectsApi,
 } from "../api";
-import { useFloorPlan, useSaveFloorPlan } from "../queries";
+import { useFloorPlan, useSaveFloorPlan, useTopologyPlacements } from "../queries";
+import { RoomMetadataEditor } from "./room-metadata-editor";
+import { SchematicView } from "./schematic-view";
+import { boardManagementApi } from "./board-management-api";
 import { CabinetEditor } from "./cabinet-editor";
 import { DocumentationPanel } from "./documentation-panel";
 import { SmartSystemsEditor } from "./smart-systems-editor";
+import { attachWheelNavigation, panViewBox, zoomViewBox } from "./floor-plan-viewport";
+import { renderPdfPageToUrl } from "./blueprint-render";
+import { cropLayout, editCrop, resolveRegistration, setCropValue } from "../domain/plan-crop";
+import { detectRooms } from "../domain/room-detection";
+import {
+  MAX_ROOMS,
+  buildDetectedRooms,
+  deleteRoomVertex,
+  hasPolygon,
+  insertRoomVertex,
+  labelAnchor,
+  moveRoomVertex,
+  roomAreaM2,
+  roomContains,
+  roomHoles,
+  roomOutline,
+  roomPath,
+  splitRoom,
+  toPolygonRoom,
+  translateRoom,
+} from "../domain/plan-rooms";
+import { mergeRooms } from "../domain/room-geometry";
+import { LoadedWorkspace, reconcileWorkspaceRefresh } from "../domain/workspace-refresh";
+import { resolveRcdBoard } from "../domain/rcd-board";
 import { useI18n } from "../../../i18n";
+import { ApiError } from "../../../lib/api-client";
 
 type Props = {
   projectId: number;
@@ -28,7 +58,7 @@ type Props = {
   projectName: string;
 };
 
-type ViewTab = "layout" | "circuits" | "cabinet" | "smart" | "documentation";
+type ViewTab = "layout" | "circuits" | "schematic" | "cabinet" | "smart" | "documentation";
 type Tool = "select" | "room" | "scale" | "dimension" | PlanPlacement["kind"];
 type DragState = {
   kind: "room" | "placement";
@@ -111,10 +141,18 @@ function dxfSafe(value: string) {
 export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: Props) {
   const { t } = useI18n();
   const query = useFloorPlan(projectId, floorId);
+  const topologyPlacements = useTopologyPlacements(projectId);
+  const boards = useQuery({
+    queryKey: ["projects", projectId, "topology", "boards"],
+    queryFn: () => boardManagementApi.list(projectId),
+  });
   const save = useSaveFloorPlan(projectId, floorId);
   const [data, setData] = useState<FloorPlanData>(emptyFloorPlan);
+  const [blueprintUrl, setBlueprintUrl] = useState<string | null>(null);
+  const [hasBlueprint, setHasBlueprint] = useState(false);
   const [tool, setTool] = useState<Tool>("select");
   const [tab, setTab] = useState<ViewTab>("layout");
+  const [newRcdBoardId, setNewRcdBoardId] = useState("");
   const [selection, setSelection] = useState<{ kind: "room" | "placement"; id: string } | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeLayerId, setActiveLayerId] = useState("installation");
@@ -139,11 +177,139 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
   const [detectedRooms, setDetectedRooms] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<DragState | null>(null);
-  const panRef = useRef<{ clientX: number; clientY: number; x: number; y: number } | null>(null);
+  const vertexDragRef = useRef<{ roomId: string; index: number } | null>(null);
+  const [splitState, setSplitState] = useState<{ roomId: string; first: number | null } | null>(null);
+  const panRef = useRef<{ pointerId: number; clientX: number; clientY: number } | null>(null);
+  const touchesRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ distance: number; midpoint: { x: number; y: number } } | null>(null);
+  const loadedPlanRef = useRef<LoadedWorkspace | null>(null);
 
   useEffect(() => {
-    if (query.data) setData(query.data);
+    if (!query.data) return;
+    const previous = loadedPlanRef.current;
+    const next = query.data;
+    setData((current) => reconcileWorkspaceRefresh(current, previous, floorId, next));
+    loadedPlanRef.current = { floorId, data: next };
   }, [floorId, query.data]);
+
+  const blueprintUrlRef = useRef<string | null>(null);
+  const blueprintGenerationRef = useRef(0);
+
+  function showBlueprintUrl(url: string | null) {
+    if (blueprintUrlRef.current) URL.revokeObjectURL(blueprintUrlRef.current);
+    blueprintUrlRef.current = url;
+    setBlueprintUrl(url);
+  }
+
+  // Stored PDFs keep the original file; only the selected page is rasterized for display.
+  async function showStoredFile(blob: Blob, contentType: string, page: number, generation: number) {
+    if (generation !== blueprintGenerationRef.current) return;
+    if (contentType !== "application/pdf") {
+      setPdfDocument(null);
+      setPdfPageCount(0);
+      showBlueprintUrl(URL.createObjectURL(blob));
+      return;
+    }
+    const task = getDocument({ data: new Uint8Array(await blob.arrayBuffer()) });
+    const pdf = await task.promise;
+    const current = clamp(page, 1, pdf.numPages);
+    let url: string;
+    try {
+      url = await renderPdfPageToUrl(pdf, current);
+    } catch (error) {
+      await task.destroy();
+      throw error;
+    }
+    if (generation !== blueprintGenerationRef.current) {
+      URL.revokeObjectURL(url);
+      await task.destroy();
+      return;
+    }
+    setPdfDocument(pdf);
+    setPdfPageCount(pdf.numPages);
+    setPdfPage(current);
+    showBlueprintUrl(url);
+  }
+
+  useEffect(() => {
+    const generation = ++blueprintGenerationRef.current;
+    showBlueprintUrl(null);
+    setHasBlueprint(false);
+    setPdfDocument(null);
+    setPdfPageCount(0);
+    (async () => {
+      let meta;
+      try {
+        meta = await projectsApi.blueprint(projectId, floorId);
+      } catch (error) {
+        if (generation === blueprintGenerationRef.current && !(error instanceof ApiError && error.status === 404)) {
+          setFeedback(t("Could not load the stored floor-plan file."));
+        }
+        return;
+      }
+      if (generation !== blueprintGenerationRef.current) return;
+      setHasBlueprint(true);
+      try {
+        const blob = await projectsApi.blueprintContent(projectId, floorId);
+        await showStoredFile(blob, meta.content_type, meta.pdf_page, generation);
+      } catch {
+        if (generation === blueprintGenerationRef.current) setFeedback(t("Could not load the stored floor-plan file."));
+      }
+    })();
+    return () => {
+      blueprintGenerationRef.current += 1;
+      if (blueprintUrlRef.current) URL.revokeObjectURL(blueprintUrlRef.current);
+      blueprintUrlRef.current = null;
+    };
+  }, [projectId, floorId]);
+
+  // A stored blueprint wins over the legacy inline data URL.
+  const backgroundSrc = blueprintUrl ?? data.background_image;
+
+  async function storeBlueprint(file: Blob, filename: string) {
+    const generation = ++blueprintGenerationRef.current;
+    let stored;
+    try {
+      stored = await projectsApi.uploadBlueprint(projectId, floorId, file, filename, hasBlueprint);
+      if (generation !== blueprintGenerationRef.current) return false;
+      setHasBlueprint(true);
+      if (stored.content_type === "application/pdf" && stored.pdf_page !== 1) {
+        stored = await projectsApi.setBlueprintPage(projectId, floorId, 1);
+      }
+      await showStoredFile(file, stored.content_type, stored.pdf_page, generation);
+    } catch (error) {
+      if (generation === blueprintGenerationRef.current) setFeedback(error instanceof Error ? `${t("Could not store the floor-plan file")}: ${error.message}` : t("Could not store the floor-plan file."));
+      return false;
+    }
+    if (generation !== blueprintGenerationRef.current) return false;
+    if (data.background_image) update({ background_image: null });
+    setFeedback(t("Floor-plan file stored."));
+    return true;
+  }
+
+  async function removeBackground() {
+    const generation = ++blueprintGenerationRef.current;
+    if (hasBlueprint) {
+      try {
+        await projectsApi.deleteBlueprint(projectId, floorId);
+      } catch (error) {
+        if (generation === blueprintGenerationRef.current) setFeedback(error instanceof Error ? error.message : t("Could not remove the floor-plan file."));
+        return;
+      }
+      if (generation !== blueprintGenerationRef.current) return;
+      setHasBlueprint(false);
+      showBlueprintUrl(null);
+      setPdfDocument(null);
+      setPdfPageCount(0);
+    }
+    update({ background_image: null });
+  }
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    return attachWheelNavigation(svg, setViewBox);
+  }, [tab, query.isLoading, query.isError]);
 
   const circuitCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -234,6 +400,8 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
   }
 
   function beginDrag(event: PointerEvent<SVGElement>, kind: DragState["kind"], id: string, x: number, y: number) {
+    if (event.button === 1 || (event.shiftKey && tool === "select") || pinchRef.current) return;
+    if (event.button !== 0) return;
     event.stopPropagation();
     const svg = event.currentTarget instanceof SVGSVGElement ? event.currentTarget : event.currentTarget.ownerSVGElement;
     if (!svg) return;
@@ -261,17 +429,19 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
 
   function handleCanvasDown(event: PointerEvent<SVGSVGElement>) {
     if (!svgRef.current) return;
-    const point = svgPoint(svgRef.current, event);
-    if (event.shiftKey && tool === "select") {
+    if (pinchRef.current) return;
+    if (event.button === 1 || (event.button === 0 && event.shiftKey && tool === "select")) {
+      event.preventDefault();
       panRef.current = {
+        pointerId: event.pointerId,
         clientX: event.clientX,
         clientY: event.clientY,
-        x: viewBox.x,
-        y: viewBox.y,
       };
       event.currentTarget.setPointerCapture(event.pointerId);
       return;
     }
+    if (event.button !== 0) return;
+    const point = svgPoint(svgRef.current, event);
     if (tool === "room") {
       const room: RoomPlanItem = {
         id: newId(),
@@ -329,10 +499,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
         tool === "custom" ? customLabel : undefined,
         tool === "custom" && selectedCustomComponentId ? { custom_component_id: selectedCustomComponentId } : {}
       );
-      const room = data.rooms.find((item) =>
-        point.x >= item.x && point.x <= item.x + item.width &&
-        point.y >= item.y && point.y <= item.y + item.height
-      );
+      const room = data.rooms.find((item) => roomContains(item, point.x, point.y));
       setData((current) => {
         return {
           ...current,
@@ -350,15 +517,23 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
   }
 
   function handleCanvasMove(event: PointerEvent<SVGSVGElement>) {
-    if (panRef.current && svgRef.current) {
-      const bounds = svgRef.current.getBoundingClientRect();
-      const scaleX = viewBox.width / bounds.width;
-      const scaleY = viewBox.height / bounds.height;
-      setViewBox((current) => ({
-        ...current,
-        x: clamp(panRef.current!.x - (event.clientX - panRef.current!.clientX) * scaleX, 0, 1000 - current.width),
-        y: clamp(panRef.current!.y - (event.clientY - panRef.current!.clientY) * scaleY, 0, 700 - current.height),
-      }));
+    if (pinchRef.current) return;
+    if (panRef.current?.pointerId === event.pointerId && svgRef.current) {
+      const matrix = svgRef.current.getScreenCTM();
+      if (!matrix) return;
+      const inverse = matrix.inverse();
+      const dx = event.clientX - panRef.current.clientX;
+      const dy = event.clientY - panRef.current.clientY;
+      panRef.current.clientX = event.clientX;
+      panRef.current.clientY = event.clientY;
+      setViewBox((current) => panViewBox(current, -inverse.a * dx - inverse.c * dy, -inverse.b * dx - inverse.d * dy));
+      return;
+    }
+    const vertexDrag = vertexDragRef.current;
+    if (vertexDrag && svgRef.current) {
+      const room = data.rooms.find((item) => item.id === vertexDrag.roomId);
+      const moved = room ? moveRoomVertex(room, vertexDrag.index, svgPoint(svgRef.current, event)) : null;
+      if (moved) applyRoomEdit([moved]);
       return;
     }
     const drag = dragRef.current;
@@ -370,11 +545,11 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
       if (!drag.ids.includes(room.id)) return room;
       const original = drag.positions.get(room.id);
       if (!original) return room;
-      return {
-        ...room,
-        x: clamp(original.x + deltaX, 0, 1000 - room.width),
-        y: clamp(original.y + deltaY, 0, 700 - room.height),
-      };
+      return translateRoom(
+        room,
+        clamp(original.x + deltaX, 0, 1000 - room.width),
+        clamp(original.y + deltaY, 0, 700 - room.height),
+      );
     });
     const placements = data.placements.map((item) => {
       if (!drag.ids.includes(item.id)) return item;
@@ -396,25 +571,132 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
           }
         }
       }
-      const containingRoom = rooms.find((room) =>
-        x >= room.x && x <= room.x + room.width && y >= room.y && y <= room.y + room.height
-      );
+      const containingRoom = rooms.find((room) => roomContains(room, x, y));
       return { ...item, x, y, room_id: containingRoom?.id ?? null };
     });
     update({ rooms, placements });
   }
 
-  function zoomCanvas(factor: number) {
-    setViewBox((current) => {
-      const width = clamp(current.width * factor, 250, 1000);
-      const height = width * 0.7;
-      return {
-        x: clamp(current.x + (current.width - width) / 2, 0, 1000 - width),
-        y: clamp(current.y + (current.height - height) / 2, 0, 700 - height),
-        width,
-        height,
-      };
+  // Replaces edited rooms and re-links symbols that were in (or are now inside) an edited room.
+  function applyRoomEdit(edited: RoomPlanItem[], added: RoomPlanItem[] = []) {
+    const editedIds = new Set(edited.map((room) => room.id));
+    const rooms = [...data.rooms.map((room) => edited.find((item) => item.id === room.id) ?? room), ...added];
+    const placements = data.placements.map((item) => {
+      if (item.room_id && !editedIds.has(item.room_id)) return item;
+      const containing = rooms.find((room) => roomContains(room, item.x, item.y));
+      return containing ? { ...item, room_id: containing.id } : item.room_id ? { ...item, room_id: null } : item;
     });
+    update({ rooms, placements });
+  }
+
+  function beginVertex(event: PointerEvent<SVGElement>, room: RoomPlanItem, index: number) {
+    if (event.button !== 0 || pinchRef.current) return;
+    event.stopPropagation();
+    if (splitState?.roomId === room.id) {
+      if (splitState.first === null) {
+        setSplitState({ roomId: room.id, first: index });
+        setFeedback(t("Click the second vertex to finish the split."));
+        return;
+      }
+      if (splitState.first === index) return;
+      const parts = data.rooms.length < MAX_ROOMS ? splitRoom(room, splitState.first, index, newId()) : null;
+      if (!parts) {
+        setSplitState({ roomId: room.id, first: null });
+        setFeedback(t("These vertices cannot be joined: the cut must be a straight line inside the room between two non-adjacent vertices."));
+        return;
+      }
+      const [kept, created] = parts;
+      const placements = data.placements.map((item) => {
+        if (item.room_id !== room.id) return item;
+        return { ...item, room_id: roomContains(created, item.x, item.y) && !roomContains(kept, item.x, item.y) ? created.id : kept.id };
+      });
+      setData((current) => ({
+        ...current,
+        rooms: [...current.rooms.map((item) => (item.id === kept.id ? kept : item)), created],
+        placements,
+      }));
+      setFeedback(t("Room split. Review both parts."));
+      setSplitState(null);
+      setSelection({ kind: "room", id: kept.id });
+      setSelectedIds([kept.id]);
+      return;
+    }
+    vertexDragRef.current = { roomId: room.id, index };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function beginEdgeInsert(event: PointerEvent<SVGElement>, room: RoomPlanItem, edgeIndex: number) {
+    if (event.button !== 0 || pinchRef.current) return;
+    event.stopPropagation();
+    const inserted = insertRoomVertex(room, edgeIndex);
+    if (!inserted) {
+      setFeedback(t("Room outlines are limited to 200 vertices."));
+      return;
+    }
+    applyRoomEdit([inserted]);
+    vertexDragRef.current = { roomId: room.id, index: edgeIndex + 1 };
+  }
+
+  function removeVertex(room: RoomPlanItem, index: number) {
+    const reduced = deleteRoomVertex(room, index);
+    if (!reduced) {
+      setFeedback(t("A vertex cannot be deleted if the outline would have fewer than 3 vertices or cross itself."));
+      return;
+    }
+    applyRoomEdit([reduced]);
+  }
+
+  function zoomCanvas(factor: number) {
+    setViewBox((current) => zoomViewBox(current, factor, { x: 0.5, y: 0.5 }));
+  }
+
+  function handleTouchDown(event: PointerEvent<SVGSVGElement>) {
+    if (event.pointerType !== "touch") return;
+    touchesRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (touchesRef.current.size !== 2) return;
+    const [first, second] = [...touchesRef.current.values()];
+    pinchRef.current = {
+      distance: Math.hypot(second.x - first.x, second.y - first.y),
+      midpoint: { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 },
+    };
+    dragRef.current = null;
+    panRef.current = null;
+    for (const id of touchesRef.current.keys()) event.currentTarget.setPointerCapture(id);
+  }
+
+  function handleTouchMove(event: PointerEvent<SVGSVGElement>) {
+    if (event.pointerType !== "touch" || !touchesRef.current.has(event.pointerId)) return;
+    touchesRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const pinch = pinchRef.current;
+    const svg = svgRef.current;
+    if (!pinch || !svg || touchesRef.current.size !== 2) return;
+    const [first, second] = [...touchesRef.current.values()];
+    const distance = Math.hypot(second.x - first.x, second.y - first.y);
+    const midpoint = { x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 };
+    const matrix = svg.getScreenCTM();
+    if (matrix && pinch.distance > 0 && distance > 0) {
+      const inverse = matrix.inverse();
+      const point = svgPoint(svg, { clientX: pinch.midpoint.x, clientY: pinch.midpoint.y });
+      const rendered = svg.viewBox.baseVal;
+      const anchor = { x: (point.x - rendered.x) / rendered.width, y: (point.y - rendered.y) / rendered.height };
+      const dx = midpoint.x - pinch.midpoint.x;
+      const dy = midpoint.y - pinch.midpoint.y;
+      const factor = pinch.distance / distance;
+      setViewBox((current) => {
+        const zoomed = zoomViewBox(current, factor, anchor);
+        const ratio = zoomed.width / current.width;
+        return panViewBox(zoomed, -(inverse.a * dx + inverse.c * dy) * ratio, -(inverse.b * dx + inverse.d * dy) * ratio);
+      });
+    }
+    pinchRef.current = { distance, midpoint };
+  }
+
+  function handlePointerEnd(event: PointerEvent<SVGSVGElement>) {
+    touchesRef.current.delete(event.pointerId);
+    if (touchesRef.current.size < 2) pinchRef.current = null;
+    dragRef.current = null;
+    vertexDragRef.current = null;
+    if (panRef.current?.pointerId === event.pointerId) panRef.current = null;
   }
 
   function groupSelectedPlacements() {
@@ -520,113 +802,76 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
   }
 
   async function detectRoomRegions() {
-    if (!data.background_image) {
+    if (!backgroundSrc) {
       setFeedback(t("Import a floor-plan image before detecting rooms."));
       return;
     }
     try {
       const image = new Image();
-      image.src = data.background_image;
+      image.src = backgroundSrc;
       await new Promise<void>((resolve, reject) => {
         image.onload = () => resolve();
         image.onerror = () => reject(new Error(t("Could not decode floor-plan image.")));
       });
+      if (!image.naturalWidth || !image.naturalHeight) throw new Error(t("Could not decode floor-plan image."));
+      const shrink = Math.min(1, 1600 / Math.max(image.naturalWidth, image.naturalHeight));
+      const width = Math.max(1, Math.round(image.naturalWidth * shrink));
+      const height = Math.max(1, Math.round(image.naturalHeight * shrink));
       const canvas = window.document.createElement("canvas");
-      const width = 100;
-      const height = 70;
       canvas.width = width;
       canvas.height = height;
       const context = canvas.getContext("2d", { willReadFrequently: true });
       if (!context) throw new Error(t("Could not analyze floor-plan image."));
       context.drawImage(image, 0, 0, width, height);
-      const pixels = context.getImageData(0, 0, width, height).data;
-      const visited = new Uint8Array(width * height);
-      const detected: { x: number; y: number; width: number; height: number; area: number }[] = [];
-      for (let index = 0; index < width * height; index += 1) {
-        const pixelOffset = index * 4;
-        const light = (pixels[pixelOffset] + pixels[pixelOffset + 1] + pixels[pixelOffset + 2]) / 3;
-        if (visited[index] || light < 205) continue;
-        const queue = [index];
-        visited[index] = 1;
-        let minX = width;
-        let minY = height;
-        let maxX = 0;
-        let maxY = 0;
-        let area = 0;
-        for (let cursor = 0; cursor < queue.length; cursor += 1) {
-          const current = queue[cursor];
-          const x = current % width;
-          const y = Math.floor(current / width);
-          minX = Math.min(minX, x);
-          minY = Math.min(minY, y);
-          maxX = Math.max(maxX, x);
-          maxY = Math.max(maxY, y);
-          area += 1;
-          for (const neighbor of [current - 1, current + 1, current - width, current + width]) {
-            if (neighbor < 0 || neighbor >= width * height || visited[neighbor]) continue;
-            const nx = neighbor % width;
-            const offset = neighbor * 4;
-            const neighborLight = (pixels[offset] + pixels[offset + 1] + pixels[offset + 2]) / 3;
-            if (Math.abs(nx - x) + Math.abs(Math.floor(neighbor / width) - y) !== 1 || neighborLight < 205) continue;
-            visited[neighbor] = 1;
-            queue.push(neighbor);
-          }
-        }
-        const boxWidth = maxX - minX + 1;
-        const boxHeight = maxY - minY + 1;
-        if (area >= 12 && area <= 1000 && boxWidth >= 8 && boxHeight >= 8) {
-          detected.push({
-            x: minX * 10,
-            y: minY * 10,
-            width: boxWidth * 10,
-            height: boxHeight * 10,
-            area,
-          });
-        }
-      }
-      const regions = detected
-        .sort((a, b) => b.area - a.area)
-        .filter((region, index, list) => !list.slice(0, index).some((other) =>
-          region.x >= other.x && region.y >= other.y &&
-          region.x + region.width <= other.x + other.width &&
-          region.y + region.height <= other.y + other.height
-        ))
-        .slice(0, 30);
-      if (regions.length === 0) {
-        setFeedback(t("No enclosed room areas found. Add rooms manually or try a clearer plan."));
+      const pixels = context.getImageData(0, 0, width, height);
+      const longSide = Math.max(width, height);
+      const regions = detectRooms({ data: pixels.data, width, height }, {
+        threshold: "otsu",
+        gapClosePx: Math.max(1, Math.round(longSide / 400)),
+        minAreaPx: Math.max(100, Math.round(width * height * 0.0015)),
+        simplifyEpsilonPx: Math.max(1, longSide / 800),
+        plan: { crop: data.image_crop, registration: resolveRegistration(data), rotationDeg: data.background_rotation },
+      });
+      const { rooms, skipped } = buildDetectedRooms(
+        regions.slice(0, 30),
+        data.rooms,
+        activeLayerId,
+        newId,
+        (index) => `${t("Detected room")} ${index}`,
+      );
+      if (rooms.length === 0) {
+        setFeedback(t("No new enclosed room areas found. Walls must be dark, continuous lines; add rooms manually or try a clearer plan."));
         return;
       }
-      const rooms: RoomPlanItem[] = regions.map((region, index) => ({
-        id: newId(),
-        name: `Detected room ${index + 1}`,
-        x: region.x,
-        y: region.y,
-        width: region.width,
-        height: region.height,
-        color: "#eaf3f1",
-        layer_id: activeLayerId,
-      }));
       update({ rooms: [...data.rooms, ...rooms] });
       setDetectedRooms(true);
-      setFeedback(`${rooms.length} room region${rooms.length === 1 ? "" : "s"} detected. Review and rename them.`);
+      setFeedback(`${rooms.length} ${t("room regions detected by heuristic raster analysis. Check every outline and area against the plan, then mark each room as reviewed.")}${skipped ? ` (${skipped} ${t("skipped: overlapping or over the limit")})` : ""}`);
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : t("Could not detect room regions."));
     }
   }
 
-  async function renderPdfPage(pdfDocument: PDFDocumentProxy, pageNumber: number) {
-    const page = await pdfDocument.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: 1.5 });
-    const canvas = window.document.createElement("canvas");
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error(t("Could not create a PDF rendering context."));
-    await page.render({ canvas, canvasContext: context, viewport }).promise;
-    const image = canvas.toDataURL("image/jpeg", 0.88);
-    if (image.length > 4_000_000) throw new Error(t("Rendered plan page is too large to save."));
-    update({ background_image: image });
-    setFeedback(`PDF page ${pageNumber} imported. Save to store it with this floor.`);
+  async function changePdfPage(pageNumber: number) {
+    if (!pdfDocument) return;
+    const generation = ++blueprintGenerationRef.current;
+    let url: string | null = null;
+    try {
+      url = await renderPdfPageToUrl(pdfDocument, pageNumber);
+      if (generation !== blueprintGenerationRef.current) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      if (hasBlueprint) await projectsApi.setBlueprintPage(projectId, floorId, pageNumber);
+      if (generation !== blueprintGenerationRef.current) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      setPdfPage(pageNumber);
+      showBlueprintUrl(url);
+    } catch (error) {
+      if (url) URL.revokeObjectURL(url);
+      if (generation === blueprintGenerationRef.current) setFeedback(error instanceof Error ? error.message : t("Could not render the PDF page."));
+    }
   }
 
   async function handleFile(event: ChangeEvent<HTMLInputElement>) {
@@ -634,45 +879,35 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
     event.target.value = "";
     if (!file) return;
     if (file.type === "application/pdf") {
-      if (file.size > 10_000_000) {
-        setFeedback(t("Floor-plan PDFs must be 10 MB or smaller."));
+      if (file.size > 25_000_000) {
+        setFeedback(t("Floor-plan PDFs must be 25 MB or smaller."));
         return;
       }
-      try {
-        const pdf = await getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
-        setPdfDocument(pdf);
-        setPdfPageCount(pdf.numPages);
-        setPdfPage(1);
-        await renderPdfPage(pdf, 1);
-      } catch (error) {
-        setFeedback(error instanceof Error ? `${t("Could not import PDF")}: ${error.message}` : t("Could not import PDF."));
-      }
+      await storeBlueprint(file, file.name);
       return;
     }
     if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
       setFeedback(t("Choose a PDF, PNG, JPEG, or WebP floor-plan file."));
       return;
     }
-    if (file.size > 2_500_000) {
-      setFeedback(t("Floor-plan images must be 2.5 MB or smaller."));
+    if (file.size > 25_000_000) {
+      setFeedback(t("Floor-plan images must be 25 MB or smaller."));
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        update({ background_image: reader.result });
-        setPdfDocument(null);
-        setPdfPageCount(0);
-        setFeedback(t("Floor-plan image added. Save to store it with this floor."));
-      }
-    };
-    reader.onerror = () => setFeedback(t("Could not read the selected image."));
-    reader.readAsDataURL(file);
+    await storeBlueprint(file, file.name);
   }
 
   function addRcd() {
+    if (!boards.data || boards.isFetching) return;
+    const availableBoards = boards.data.boards;
+    const boardId = resolveRcdBoard(availableBoards, newRcdBoardId);
+    if (boardId === undefined) {
+      setFeedback(t("Choose a distribution board for the new RCD."));
+      return;
+    }
     const rcd: ResidualCurrentDevice = {
       id: newId(),
+      board_id: boardId,
       name: `RCD ${data.rcds.length + 1}`,
       rated_current_ma: 30,
       poles: 4,
@@ -867,12 +1102,11 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
     if (!clipboard.rooms.length && !clipboard.placements.length) return;
     const ids = new Map<string, string>();
     for (const item of [...clipboard.rooms, ...clipboard.placements]) ids.set(item.id, newId());
-    const rooms = clipboard.rooms.map((item) => ({
-      ...item,
-      id: ids.get(item.id)!,
-      x: clamp(item.x + 20, 0, 1000 - item.width),
-      y: clamp(item.y + 20, 0, 700 - item.height),
-    }));
+    const rooms = clipboard.rooms.map((item) => translateRoom(
+      { ...item, id: ids.get(item.id)! },
+      clamp(item.x + 20, 0, 1000 - item.width),
+      clamp(item.y + 20, 0, 700 - item.height),
+    ));
     const placements = clipboard.placements.map((item) => ({
       ...item,
       id: ids.get(item.id)!,
@@ -897,6 +1131,27 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
     if (placements.length) setSelection({ kind: "placement", id: placements[0].id });
     else if (rooms.length) setSelection({ kind: "room", id: rooms[0].id });
     if (placementIds.size > 0) setFeedback(t("Selection duplicated."));
+  }
+
+  function mergeSelectedRooms() {
+    if (selectedRooms.length !== 2 || selectedIds.length !== 2) {
+      setFeedback(t("Select exactly two adjacent rooms to merge them."));
+      return;
+    }
+    const [first, second] = selectedRooms;
+    const result = mergeRooms(first, second);
+    if (!result.ok) {
+      setFeedback(t("These rooms cannot be merged: they must share an edge, not overlap, and be on the same layer."));
+      return;
+    }
+    const merged = { ...result.value, needs_review: Boolean(first.needs_review || second.needs_review) };
+    update({
+      rooms: data.rooms.filter((room) => room.id !== second.id).map((room) => (room.id === first.id ? merged : room)),
+      placements: data.placements.map((item) => (item.room_id === second.id ? { ...item, room_id: first.id } : item)),
+    });
+    setSelection({ kind: "room", id: first.id });
+    setSelectedIds([first.id]);
+    setFeedback(t("Rooms merged. Review the result."));
   }
 
   function removeSelection() {
@@ -992,13 +1247,14 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
     };
     for (const room of data.rooms) {
       const layer = layerName(room.layer_id);
-      const x2 = room.x + room.width;
-      const y2 = room.y + room.height;
-      line(layer, room.x, room.y, x2, room.y);
-      line(layer, x2, room.y, x2, y2);
-      line(layer, x2, y2, room.x, y2);
-      line(layer, room.x, y2, room.x, room.y);
-      text(layer, room.name, room.x + 8, room.y + 18);
+      for (const ring of [roomOutline(room), ...roomHoles(room)]) {
+        ring.forEach((from, index) => {
+          const to = ring[(index + 1) % ring.length];
+          line(layer, from.x, from.y, to.x, to.y);
+        });
+      }
+      const anchor = hasPolygon(room) ? labelAnchor(room) : { x: room.x + 8, y: room.y + 18 };
+      text(layer, room.name, anchor.x, anchor.y);
     }
     for (const item of data.placements) {
       const layer = layerName(item.layer_id);
@@ -1047,16 +1303,34 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
           <button
             type="button"
             className="button-primary"
-            onClick={() => save.mutate(data, { onSuccess: () => setFeedback(t("All changes saved.")), onError: () => setFeedback(t("Save failed. Your unsaved changes are still here.")) })}
+            onClick={() => {
+              const submitted = data;
+              save.mutate(submitted, {
+                onSuccess: (saved) => {
+                  setData((current) => current === submitted ? saved : current);
+                  setFeedback(t("Save completed. Changes made while saving remain unsaved."));
+                },
+                onError: (error) => setFeedback(error instanceof ApiError && error.status === 409
+                  ? t("Save conflict. Your changes remain here; reload the workspace and reapply them after checking project topology.")
+                  : t("Save failed. Your unsaved changes are still here.")),
+              });
+            }}
             disabled={save.isPending}
           >
             {save.isPending ? t("Saving…") : t("Save workspace")}
           </button>
         </div>
       </header>
+      {(data.topology_warnings?.length ?? 0) > 0 && (
+        <div className="editor-error" role="alert">
+          <strong>{t("Some project topology cannot be shown in the circuit editor:")}</strong>
+          <ul>{data.topology_warnings?.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}</ul>
+        </div>
+      )}
       <div className="workspace-tabs" role="tablist" aria-label={t("Floor workspace")}>
         <button type="button" role="tab" aria-selected={tab === "layout"} className={tab === "layout" ? "active" : ""} onClick={() => setTab("layout")}>{t("Floor plan")}</button>
         <button type="button" role="tab" aria-selected={tab === "circuits"} className={tab === "circuits" ? "active" : ""} onClick={() => setTab("circuits")}>{t("Circuits & board")}</button>
+        <button type="button" role="tab" aria-selected={tab === "schematic"} className={tab === "schematic" ? "active" : ""} onClick={() => setTab("schematic")}>{t("Schematic preview")}</button>
         <button type="button" role="tab" aria-selected={tab === "cabinet"} className={tab === "cabinet" ? "active" : ""} onClick={() => setTab("cabinet")}>{t("Cabinet layout")}</button>
         <button type="button" role="tab" aria-selected={tab === "smart"} className={tab === "smart" ? "active" : ""} onClick={() => setTab("smart")}>{t("Smart systems")}</button>
         <button type="button" role="tab" aria-selected={tab === "documentation"} className={tab === "documentation" ? "active" : ""} onClick={() => setTab("documentation")}>{t("Documentation")}</button>
@@ -1072,16 +1346,14 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
             {pdfDocument && pdfPageCount > 1 && (
               <label className="field-label">{t("PDF page")}
                 <select value={pdfPage} onChange={(event) => {
-                  const page = Number(event.target.value);
-                  setPdfPage(page);
-                  void renderPdfPage(pdfDocument, page);
+                  void changePdfPage(Number(event.target.value));
                 }}>
                   {Array.from({ length: pdfPageCount }, (_, index) => <option key={index + 1} value={index + 1}>{t("Page {{number}}", { number: index + 1 })}</option>)}
                 </select>
               </label>
             )}
-            {data.background_image && <button className="text-button" type="button" onClick={() => update({ background_image: null })}>{t("Remove image")}</button>}
-            {data.background_image && (
+            {backgroundSrc && <button className="text-button" type="button" onClick={() => void removeBackground()}>{t("Remove image")}</button>}
+            {backgroundSrc && (
               <>
                 <label className="field-label">{t("Plan opacity")}
                   <input type="range" min="0.1" max="1" step="0.05" value={data.background_opacity} onChange={(event) => update({ background_opacity: Number(event.target.value) })} />
@@ -1091,16 +1363,14 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
                     {[0, 90, 180, 270].map((degrees) => <option key={degrees} value={degrees}>{degrees}°</option>)}
                   </select>
                 </label>
-                <button type="button" className="tool" onClick={() => update({ image_crop: data.image_crop ? null : [0.05, 0.05, 0.9, 0.9] })}>
+                <button type="button" className="tool" onClick={() => update(editCrop(data, data.image_crop ? null : [0.05, 0.05, 0.9, 0.9]))}>
                   {data.image_crop ? t("Reset plan crop") : t("Crop plan edges")}
                 </button>
                 {data.image_crop && <div className="crop-controls">
                   {data.image_crop.map((value, index) => (
                     <label className="field-label" key={index}>{t(["Left", "Top", "Width", "Height"][index])}
                       <input type="range" min={index < 2 ? 0 : 0.2} max={index === 0 ? 1 - data.image_crop![2] : index === 1 ? 1 - data.image_crop![3] : index === 2 ? 1 - data.image_crop![0] : 1 - data.image_crop![1]} step="0.01" value={value} onChange={(event) => {
-                        const crop = [...data.image_crop!] as [number, number, number, number];
-                        crop[index] = clamp(Number(event.target.value), index < 2 ? 0 : 0.2, index === 0 ? 1 - crop[2] : index === 1 ? 1 - crop[3] : index === 2 ? 1 - crop[0] : 1 - crop[1]);
-                        update({ image_crop: crop });
+                        update(editCrop(data, setCropValue(data.image_crop, index as 0 | 1 | 2 | 3, Number(event.target.value))));
                       }} />
                     </label>
                   ))}
@@ -1168,6 +1438,9 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
               <button type="button" className={tool === "dimension" ? "tool active" : "tool"} onClick={() => { setMeasurementStart(null); setTool(tool === "dimension" ? "select" : "dimension"); }}>＋ {t("Add dimension")}</button>
               <button type="button" className="tool" onClick={addFreeNote}>＋ {t("Add note")}</button>
               <button type="button" className="tool" onClick={() => void detectRoomRegions()}>{detectedRooms ? t("Detect more rooms") : t("Detect rooms (beta)")}</button>
+              {data.rooms.some((room) => room.needs_review) && (
+                <p className="room-warning" role="status">{data.rooms.filter((room) => room.needs_review).length} {t("detected rooms still need review. Detection is heuristic; verify outlines and areas against the plan.")}</p>
+              )}
               <button type="button" className="tool" onClick={() => addRoom(t("Living room"), [
                 { kind: "light", label: t("Ceiling light"), dx: 90, dy: 45 },
                 { kind: "switch", label: t("Switch"), dx: 20, dy: 20 },
@@ -1190,6 +1463,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
             </div>
             <div className="sidebar-divider" />
             <p className="field-label">{t("Symbol library")}</p>
+            <p className="field-hint">{t("Floor-plan symbols are illustrative and have not been verified against DIN EN 60617 / IEC 60617.")}</p>
             <div className="tool-list symbol-tools">
               {symbolKinds.map(({ kind, glyph, label }) => (
                 <button type="button" key={kind} className={tool === kind ? "tool active" : "tool"} onClick={() => setTool(tool === kind ? "select" : kind)}>
@@ -1219,10 +1493,41 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
                 <button type="button" className="text-button" onClick={saveCustomComponent}>{t("Save to custom library")}</button>
               </>
             )}
+            {selectedRooms.length === 2 && selectedIds.length === 2 && (
+              <button type="button" className="tool" onClick={mergeSelectedRooms}>{t("Merge rooms")}</button>
+            )}
             {selectedRoom && (
               <>
-                <label className="field-label" htmlFor="selected-room-name">{t("Selected room")}</label>
-                <input id="selected-room-name" value={selectedRoom.name} onChange={(event) => update({ rooms: data.rooms.map((room) => room.id === selectedRoom.id ? { ...room, name: event.target.value } : room) })} />
+                <RoomMetadataEditor
+                  key={selectedRoom.id}
+                  value={selectedRoom}
+                  t={t}
+                  onSave={(next) => update({ rooms: data.rooms.map((room) => room.id === next.id ? next : room) })}
+                />
+                {selectedRoom.needs_review && (
+                  <div className="room-warning" role="alert">
+                    <p>{t("Detected automatically by a heuristic raster analysis. Walls, doors, furniture and scan noise can distort the outline and area. Verify against the plan before relying on it.")}</p>
+                    <button type="button" className="tool" onClick={() => update({ rooms: data.rooms.map((room) => room.id === selectedRoom.id ? { ...room, needs_review: false } : room) })}>{t("Mark as reviewed")}</button>
+                  </div>
+                )}
+                <p className="field-label">
+                  {(() => {
+                    const area = roomAreaM2(selectedRoom, data.scale_m_per_100_units);
+                    return area === null ? t("Area: calibrate the plan scale to see m²") : `${t("Area")}: ${area.toFixed(2)} m²${roomHoles(selectedRoom).length ? ` (${t("holes excluded")})` : ""}`;
+                  })()}
+                </p>
+                {hasPolygon(selectedRoom) ? (
+                  <>
+                    <button type="button" className={splitState?.roomId === selectedRoom.id ? "tool active" : "tool"} onClick={() => {
+                      const active = splitState?.roomId === selectedRoom.id;
+                      setSplitState(active ? null : { roomId: selectedRoom.id, first: null });
+                      setFeedback(active ? "" : t("Click the first vertex of the cut."));
+                    }}>{t("Split room")}</button>
+                    <p className="field-label">{t("Drag vertices to reshape; click a + handle to add a vertex; double-click a vertex to delete it.")}</p>
+                  </>
+                ) : (
+                  <button type="button" className="tool" onClick={() => applyRoomEdit([toPolygonRoom(selectedRoom)])}>{t("Edit outline")}</button>
+                )}
               </>
             )}
             {selectedPlacement && (
@@ -1294,7 +1599,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
           </aside>
           <div className="canvas-column">
             <div className="canvas-instructions">
-              <span>{t("Choose a room or symbol, then click to place. Drag to move; hold Shift and drag to pan.")}</span>
+              <span>{t("Choose a room or symbol, then click to place. Drag to move; middle-drag or Shift-drag to pan. Scroll to zoom; use two fingers to pan or pinch.")}</span>
               <div className="button-row">
                 <button type="button" className="tool" aria-label={t("Zoom out")} onClick={() => zoomCanvas(1.2)}>−</button>
                 <button type="button" className="tool" aria-label={t("Zoom in")} onClick={() => zoomCanvas(0.8)}>＋</button>
@@ -1309,14 +1614,12 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
               viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
               role="img"
               aria-label={`${floorName} floor-plan canvas`}
+              onPointerDownCapture={handleTouchDown}
+              onPointerMoveCapture={handleTouchMove}
               onPointerDown={handleCanvasDown}
               onPointerMove={handleCanvasMove}
-              onWheel={(event) => {
-                event.preventDefault();
-                zoomCanvas(event.deltaY < 0 ? 0.9 : 1.1);
-              }}
-              onPointerUp={() => { dragRef.current = null; panRef.current = null; }}
-              onPointerCancel={() => { dragRef.current = null; panRef.current = null; }}
+              onPointerUp={handlePointerEnd}
+              onPointerCancel={handlePointerEnd}
             >
               <defs>
                 <pattern id="canvas-grid" width="25" height="25" patternUnits="userSpaceOnUse">
@@ -1326,21 +1629,19 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
               </defs>
               <rect width="1000" height="700" fill="#fff" />
               <rect width="1000" height="700" fill="url(#canvas-grid)" />
-              {data.background_image && (() => {
-                const crop = data.image_crop ?? [0, 0, 1, 1];
-                const imageWidth = 1000 / crop[2];
-                const imageHeight = 700 / crop[3];
+              {backgroundSrc && (() => {
+                const layout = cropLayout(data, data.background_rotation);
                 return (
                   <g clipPath="url(#plan-image-clip)" opacity={data.background_opacity}>
-                    <image
-                      href={data.background_image}
-                      x={-crop[0] * imageWidth}
-                      y={-crop[1] * imageHeight}
-                      width={imageWidth}
-                      height={imageHeight}
-                      preserveAspectRatio="none"
-                      transform={`rotate(${data.background_rotation},500,350)`}
-                    />
+                    {layout.clip && <clipPath id="plan-source-crop"><rect {...layout.clip} /></clipPath>}
+                    <g transform={layout.transform}>
+                      <image
+                        href={backgroundSrc}
+                        {...layout.image}
+                        preserveAspectRatio="none"
+                        clipPath={layout.clip ? "url(#plan-source-crop)" : undefined}
+                      />
+                    </g>
                   </g>
                 );
               })()}
@@ -1361,11 +1662,43 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
               ))}
               {showRoomOverlays && data.rooms.filter((room) => layerIsVisible(room.layer_id)).map((room) => (
                 <g key={room.id} onPointerDown={(event) => beginDrag(event, "room", room.id, room.x, room.y)} className="canvas-draggable">
-                  <rect x={room.x} y={room.y} width={room.width} height={room.height} rx="5" style={{ fill: room.color }} className={selectedIds.includes(room.id) ? "room-shape selected" : "room-shape"} />
-                  <text x={room.x + 12} y={room.y + 24} className="room-label">{room.name}</text>
-                  {selectedIds.includes(room.id) && <rect x={room.x + room.width - 6} y={room.y + room.height - 6} width="12" height="12" className="selection-handle" />}
+                  {hasPolygon(room)
+                    ? <path d={roomPath(room)} fillRule="evenodd" style={{ fill: room.color }} className={`room-shape${selectedIds.includes(room.id) ? " selected" : ""}${room.needs_review ? " review" : ""}`} />
+                    : <rect x={room.x} y={room.y} width={room.width} height={room.height} rx="5" style={{ fill: room.color }} className={selectedIds.includes(room.id) ? "room-shape selected" : "room-shape"} />}
+                  {hasPolygon(room)
+                    ? <text x={labelAnchor(room).x} y={labelAnchor(room).y} textAnchor="middle" className="room-label">{room.name}{room.needs_review ? " ⚠" : ""}</text>
+                    : <text x={room.x + 12} y={room.y + 24} className="room-label">{room.name}</text>}
+                  {!hasPolygon(room) && selectedIds.includes(room.id) && <rect x={room.x + room.width - 6} y={room.y + room.height - 6} width="12" height="12" className="selection-handle" />}
                 </g>
               ))}
+              {tool === "select" && selectedRoom && hasPolygon(selectedRoom) && selectedIds.length === 1 && layerIsVisible(selectedRoom.layer_id) && (() => {
+                const outline = roomOutline(selectedRoom);
+                const splitting = splitState?.roomId === selectedRoom.id;
+                return (
+                  <g className="room-vertices">
+                    {!splitting && outline.map((from, index) => {
+                      const to = outline[(index + 1) % outline.length];
+                      return (
+                        <g key={`edge-${index}`} transform={`translate(${(from.x + to.x) / 2},${(from.y + to.y) / 2})`} onPointerDown={(event) => beginEdgeInsert(event, selectedRoom, index)} className="vertex-add">
+                          <circle r="7" />
+                          <path d="M-3.5,0H3.5M0,-3.5V3.5" />
+                        </g>
+                      );
+                    })}
+                    {outline.map((point, index) => (
+                      <circle
+                        key={`vertex-${index}`}
+                        cx={point.x}
+                        cy={point.y}
+                        r="7"
+                        className={splitting && splitState?.first === index ? "vertex-handle split-start" : "vertex-handle"}
+                        onPointerDown={(event) => beginVertex(event, selectedRoom, index)}
+                        onDoubleClick={() => removeVertex(selectedRoom, index)}
+                      />
+                    ))}
+                  </g>
+                );
+              })()}
               {!isClientPresentation && data.mounting_points.map((point) => (
                 <g key={point.id} transform={`translate(${point.x},${point.y}) rotate(${point.rotation})`} className="mounting-point">
                   <circle r="8" />
@@ -1399,8 +1732,19 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
       ) : tab === "circuits" ? (
         <div className="circuits-panel">
           <div className="circuits-intro">
-            <div><p className="eyebrow">{t("DISTRIBUTION DOCUMENTATION")}</p><h4>{t("Protective devices and outgoing circuits")}</h4><p>{t("Circuits are numbered automatically below each RCD. Terminal references follow the same grouping.")}</p></div>
-            <button type="button" className="button-primary" onClick={addRcd}>＋ {t("Add RCD")}</button>
+            <div><p className="eyebrow">{t("DISTRIBUTION DOCUMENTATION")}</p><h4>{t("Protective devices and outgoing circuits")}</h4><p>{t("Circuits are numbered automatically below each RCD. Terminal references follow the same grouping.")}</p><p className="field-hint">{t("New device and circuit values are examples; verify every rating and cable against the design.")}</p></div>
+            <div>
+              {(boards.data?.boards.length ?? 0) > 1 && (
+                <label>{t("Distribution board")}
+                  <select value={newRcdBoardId} onChange={(event) => setNewRcdBoardId(event.target.value)}>
+                    <option value="">{t("Choose a distribution board")}</option>
+                    {boards.data?.boards.map((board) => <option key={board.id} value={board.id}>{board.name}</option>)}
+                  </select>
+                </label>
+              )}
+              {boards.isError && <p className="editor-error" role="alert">{t("Could not load distribution boards.")}</p>}
+              <button type="button" className="button-primary" onClick={addRcd} disabled={!boards.data || boards.isFetching}>＋ {t("Add RCD")}</button>
+            </div>
           </div>
           <section className="electrical-component-panel">
             <header><strong>{t("Main devices, contacts and terminals")}</strong></header>
@@ -1436,6 +1780,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
                   <header className="rcd-heading">
                     <div className="number-badge">F{rcdIndex}</div>
                     <input aria-label={t("RCD name")} value={rcd.name} onChange={(event) => update({ rcds: data.rcds.map((item) => item.id === rcd.id ? { ...item, name: event.target.value } : item) })} />
+                    {rcd.board_id && <span>{t("Distribution board")}: {boards.data?.boards.find((board) => board.id === rcd.board_id)?.name ?? t("Assigned board unavailable")}</span>}
                     <label>{t("Rated current (mA)")}<input type="number" min="10" max="1000" value={rcd.rated_current_ma} onChange={(event) => update({ rcds: data.rcds.map((item) => item.id === rcd.id ? { ...item, rated_current_ma: Number(event.target.value) } : item) })} /></label>
                     <label>{t("Poles")}<select value={rcd.poles} onChange={(event) => update({ rcds: data.rcds.map((item) => item.id === rcd.id ? { ...item, poles: Number(event.target.value) as 2 | 4 } : item) })}><option value={2}>{t("2-pole")}</option><option value={4}>{t("4-pole")}</option></select></label>
                     <label>{t("Type")}<select value={rcd.type} onChange={(event) => update({ rcds: data.rcds.map((item) => item.id === rcd.id ? { ...item, type: event.target.value as ResidualCurrentDevice["type"] } : item) })}><option>A</option><option>F</option><option>B</option></select></label>
@@ -1488,10 +1833,24 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
                                 multiple
                                 size={Math.min(Math.max(data.placements.length, 2), 4)}
                                 value={circuit.loads}
+                                disabled={topologyPlacements.isLoading || topologyPlacements.isError}
                                 onChange={(event) => updateCircuit(circuit.id, { loads: Array.from(event.currentTarget.selectedOptions, (option) => option.value) })}
                               >
-                                {data.placements.map((placement) => <option key={placement.id} value={placement.id}>{placement.label}</option>)}
+                                {[
+                                  ...data.placements.map((placement) => ({
+                                  id: placement.id,
+                                  floor_id: floorId,
+                                  floor_name: floorName,
+                                  label: placement.label,
+                                  })),
+                                  ...(topologyPlacements.data ?? []).filter((placement) => placement.floor_id !== floorId),
+                                ].map((placement) => (
+                                  <option key={`${placement.floor_id}-${placement.id}`} value={placement.id}>
+                                    {placement.floor_name} · {placement.label}
+                                  </option>
+                                ))}
                               </select>
+                              {topologyPlacements.isError && <p className="editor-error" role="alert">{t("Project-wide floor-plan points could not be loaded. Circuit load editing is disabled.")}</p>}
                             </td>
                             <td><span className="terminal-ref">X{rcdIndex}.{circuits.findIndex((item) => item.id === circuit.id) + 1}</span></td>
                             <td><button className="icon-button" aria-label={t("Remove {{name}}", { name: circuit.name })} type="button" onClick={() => removeCircuit(circuit.id)}>×</button></td>
@@ -1521,13 +1880,19 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
             </section>
           )}
         </div>
+      ) : tab === "schematic" ? (
+        <SchematicView
+          data={data}
+          topologyPlacements={topologyPlacements.isError ? undefined : topologyPlacements.data?.filter((placement) => placement.floor_id !== floorId)}
+          topologyPlacementsStatus={topologyPlacements.isLoading ? "loading" : topologyPlacements.isError ? "unavailable" : "available"}
+        />
       ) : tab === "cabinet" ? (
         <CabinetEditor data={data} onChange={update} />
       ) : tab === "smart" ? (
         <SmartSystemsEditor data={data} onChange={update} />
       ) : null}
       <DocumentationPanel
-        data={data}
+        data={{ ...data, background_image: backgroundSrc }}
         projectName={projectName}
         floorName={floorName}
         active={tab === "documentation"}
