@@ -28,27 +28,23 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [queryClient]);
 
   if (!hasToken) {
-    return <LoginForm onDone={() => setHasToken(true)} />;
+    return <IdentityProviderLogin />;
   }
   if (me.isLoading) {
     return <p>Loading...</p>;
   }
   if (me.isError || !me.data) {
     return (
-      <LoginForm
-        onDone={() => {
-          setHasToken(true);
-          void me.refetch();
-        }}
-      />
+      <IdentityProviderLogin />
     );
   }
 
   return (
     <>
-      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+      <div className="flex items-center justify-end gap-3 bg-slate-900 px-4 py-1.5 text-xs text-slate-200 sm:px-8">
         <span>{me.data.name}</span>
         <button
+          className="!border-slate-600 !bg-transparent !px-2 !py-0.5 !text-xs !text-slate-200 hover:!bg-slate-800"
           onClick={() => {
             tokenStore.clear();
             window.dispatchEvent(new Event("elplan:logout"));
@@ -62,11 +58,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   );
 }
 
-function LoginForm({ onDone }: { onDone: () => void }) {
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
-  const [password, setPassword] = useState("");
+function IdentityProviderLogin() {
   const [error, setError] = useState<string | null>(() => {
     const err = new URLSearchParams(window.location.hash.replace(/^#/, "")).get("error");
     if (err) {
@@ -76,46 +68,21 @@ function LoginForm({ onDone }: { onDone: () => void }) {
   });
   const config = useQuery({ queryKey: ["auth-config"], queryFn: authApi.config });
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      if (mode === "register") {
-        await authApi.register(email, name, password);
-      }
-      const { access_token } = await authApi.login(email, password);
-      tokenStore.set(access_token);
-      onDone();
-    } catch (err) {
-      setError(mode === "login" ? "Invalid email or password" : "Registration failed");
-    }
-  }
-
   return (
-    <form onSubmit={submit} style={{ display: "grid", gap: 8, maxWidth: 320 }}>
-      <h2>{mode === "login" ? "Log in" : "Register"}</h2>
-      <input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-      {mode === "register" && (
-        <input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required />
-      )}
-      <input
-        placeholder="Password (min. 8 characters)"
-        type="password"
-        minLength={8}
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        required
-      />
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
-      <button type="submit">{mode === "login" ? "Log in" : "Register"}</button>
+    <main className="mx-auto mt-16 grid w-full max-w-sm gap-3 rounded-lg border border-slate-200 bg-white p-6 text-center shadow-sm">
+      <h2 className="text-xl font-semibold">Sign in</h2>
+      <p className="text-sm text-slate-600">Continue with your identity provider to access elplan.</p>
+      {error && <p role="alert" className="text-sm text-red-600">Sign-in failed: {error}</p>}
+      {config.isLoading && <p className="text-sm text-slate-500">Checking identity provider configuration…</p>}
+      {config.isError && <p role="alert" className="text-sm text-red-600">Could not load identity provider configuration.</p>}
       {config.data?.oauth_enabled && (
-        <a href="/api/v1/auth/oauth/login">
-          <button type="button">Log in with {config.data.oauth_provider_name}</button>
+        <a className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800" href="/api/v1/auth/oauth/login">
+          Continue with {config.data.oauth_provider_name}
         </a>
       )}
-      <button type="button" onClick={() => setMode(mode === "login" ? "register" : "login")}>
-        {mode === "login" ? "Create an account" : "I already have an account"}
-      </button>
-    </form>
+      {config.data && !config.data.oauth_enabled && (
+        <p role="alert" className="text-sm text-red-600">Identity provider sign-in is not configured on this server.</p>
+      )}
+    </main>
   );
 }

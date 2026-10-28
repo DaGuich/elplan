@@ -6,7 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
+from app.core.db import SessionLocal
+from app.core.security import UNUSABLE_PASSWORD
 from app.main import app
+from app.models.user import User
 from app.services import oauth
 
 client = TestClient(app, follow_redirects=False)
@@ -15,6 +18,7 @@ client = TestClient(app, follow_redirects=False)
 @pytest.fixture(autouse=True)
 def provider(monkeypatch):
     monkeypatch.setattr(settings, "OAUTH_CLIENT_ID", "cid")
+    monkeypatch.setattr(settings, "OAUTH_TRUST_EMAIL", False)
     monkeypatch.setattr(oauth, "_cache", oauth.Endpoints("https://idp", "https://idp/auth", "https://idp/token", "https://idp/info"))
     state = {"info": {}}
     monkeypatch.setattr(oauth, "exchange_code", lambda code, verifier: "at")
@@ -43,8 +47,18 @@ def test_login_provisions_user_and_token_works(provider):
     assert frag.startswith("token=")
     me = client.get("/api/v1/users/me", headers={"Authorization": "Bearer " + frag[6:]})
     assert me.json()["email"] == email
-    # password login is impossible for OAuth-only accounts
-    assert client.post("/api/v1/auth/login", json={"email": email, "password": "!"}).status_code == 401
+    assert client.post("/api/v1/auth/login", json={"email": email, "password": "!"}).status_code == 403
+
+
+def test_password_authentication_endpoints_are_disabled():
+    assert client.post("/api/v1/auth/register", json={}).status_code == 403
+    assert client.post("/api/v1/auth/login", json={}).status_code == 403
+
+
+def test_unconfigured_identity_provider_does_not_enable_an_alternative_login(monkeypatch):
+    monkeypatch.setattr(settings, "OAUTH_CLIENT_ID", "")
+    assert client.get("/api/v1/auth/config").json()["oauth_enabled"] is False
+    assert client.get("/api/v1/auth/oauth/login").status_code == 404
 
 
 def test_state_mismatch_rejected(provider):
@@ -52,12 +66,20 @@ def test_state_mismatch_rejected(provider):
     assert finish("wrong").startswith("error=")
 
 
-def test_existing_local_account_is_never_auto_linked(provider):
+def test_existing_local_account_requires_explicit_email_trust(provider, monkeypatch):
     email = f"loc-{uuid.uuid4().hex[:8]}@example.com"
-    client.post("/api/v1/auth/register", json={"email": email, "name": "L", "password": "password123"})
+    with SessionLocal() as db:
+        db.add(User(email=email, name="L", password_hash=UNUSABLE_PASSWORD))
+        db.commit()
     provider["info"] = {"sub": uuid.uuid4().hex, "email": email, "email_verified": False}
     assert finish(start_login()).startswith("error=")
     provider["info"]["email_verified"] = True
     assert finish(start_login()).startswith("error=")
-    login = client.post("/api/v1/auth/login", json={"email": email, "password": "password123"})
-    assert login.status_code == 200
+
+    monkeypatch.setattr(settings, "OAUTH_TRUST_EMAIL", True)
+    frag = finish(start_login())
+    assert frag.startswith("token=")
+    me = client.get("/api/v1/users/me", headers={"Authorization": "Bearer " + frag[6:]})
+    assert me.json()["email"] == email
+
+    assert client.post("/api/v1/auth/login", json={"email": email, "password": "password123"}).status_code == 403

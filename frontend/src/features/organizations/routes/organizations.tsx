@@ -13,9 +13,11 @@ export function OrganizationsPage() {
   const isAdmin = org?.role === "owner" || org?.role === "admin";
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
+    <div className="grid gap-6">
       <h2>Organizations</h2>
+      <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2">
       <form
+        className="flex gap-2"
         onSubmit={async (e) => {
           e.preventDefault();
           const created = await orgApi.create(newOrg);
@@ -24,12 +26,12 @@ export function OrganizationsPage() {
           qc.invalidateQueries({ queryKey: ["orgs"] });
         }}
       >
-        <input placeholder="New organization" value={newOrg} onChange={(e) => setNewOrg(e.target.value)} required />
+        <input className="min-w-0 flex-1" placeholder="New organization" value={newOrg} onChange={(e) => setNewOrg(e.target.value)} required />
         <button type="submit">Create</button>
       </form>
 
       {orgs.length > 0 && (
-        <select value={org?.id} onChange={(e) => setSelected(Number(e.target.value))}>
+        <select className="w-full" value={org?.id} onChange={(e) => setSelected(Number(e.target.value))}>
           {orgs.map((o) => (
             <option key={o.id} value={o.id}>
               {o.name} ({o.role})
@@ -37,6 +39,7 @@ export function OrganizationsPage() {
           ))}
         </select>
       )}
+      </div>
 
       {org && <Members orgId={org.id} isAdmin={isAdmin} />}
       {org && <Teams orgId={org.id} isAdmin={isAdmin} />}
@@ -53,15 +56,18 @@ function Members({ orgId, isAdmin }: { orgId: number; isAdmin: boolean }) {
   const refresh = () => qc.invalidateQueries({ queryKey: ["members", orgId] });
 
   return (
-    <section>
+    <section className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <h3>Members</h3>
-      <ul>
+      <ul className="m-0 list-none divide-y divide-slate-100 p-0">
         {members.map((m) => (
-          <li key={m.user_id}>
-            {m.name} ({m.email}) – {m.role}
+          <li key={m.user_id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+            <span>
+              <span className="font-medium">{m.name}</span>{" "}
+              <span className="text-sm text-slate-500">{m.email}</span>
+              {!isAdmin && <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs">{m.role}</span>}
+            </span>
             {isAdmin && (
-              <>
-                {" "}
+              <div className="flex gap-2">
                 <select
                   value={m.role}
                   onChange={async (e) => {
@@ -75,6 +81,7 @@ function Members({ orgId, isAdmin }: { orgId: number; isAdmin: boolean }) {
                   <option value="owner">owner</option>
                 </select>
                 <button
+                  className="!border-red-200 !text-red-700 hover:!bg-red-50"
                   onClick={async () => {
                     setError(null);
                     await orgApi.removeMember(orgId, m.user_id).catch(() => setError("Not allowed"));
@@ -84,13 +91,14 @@ function Members({ orgId, isAdmin }: { orgId: number; isAdmin: boolean }) {
                 >
                   Remove
                 </button>
-              </>
+              </div>
             )}
           </li>
         ))}
       </ul>
       {isAdmin && (
         <form
+          className="flex flex-col gap-2 sm:flex-row"
           onSubmit={async (e) => {
             e.preventDefault();
             setError(null);
@@ -103,7 +111,7 @@ function Members({ orgId, isAdmin }: { orgId: number; isAdmin: boolean }) {
             }
           }}
         >
-          <input placeholder="User email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <input className="min-w-0 flex-1" placeholder="User email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
             <option value="member">member</option>
             <option value="admin">admin</option>
@@ -112,7 +120,7 @@ function Members({ orgId, isAdmin }: { orgId: number; isAdmin: boolean }) {
           <button type="submit">Add member</button>
         </form>
       )}
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
     </section>
   );
 }
@@ -123,10 +131,11 @@ function Teams({ orgId, isAdmin }: { orgId: number; isAdmin: boolean }) {
   const [name, setName] = useState("");
 
   return (
-    <section>
+    <section className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <h3>Teams</h3>
       {isAdmin && (
         <form
+          className="flex gap-2"
           onSubmit={async (e) => {
             e.preventDefault();
             await orgApi.createTeam(orgId, name);
@@ -134,7 +143,7 @@ function Teams({ orgId, isAdmin }: { orgId: number; isAdmin: boolean }) {
             qc.invalidateQueries({ queryKey: ["teams", orgId] });
           }}
         >
-          <input placeholder="New team" value={name} onChange={(e) => setName(e.target.value)} required />
+          <input className="min-w-0 flex-1" placeholder="New team" value={name} onChange={(e) => setName(e.target.value)} required />
           <button type="submit">Create team</button>
         </form>
       )}
@@ -159,10 +168,12 @@ function TeamCard({ orgId, team, isAdmin }: { orgId: number; team: Team; isAdmin
   const candidates = orgMembers.filter((m: Member) => !members.some((x) => x.user_id === m.user_id));
 
   return (
-    <div style={{ border: "1px solid #ccc", padding: 8, margin: "8px 0" }}>
+    <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="flex items-center justify-between gap-2">
       <strong>{team.name}</strong>
       {isAdmin && (
         <button
+          className="!border-red-200 !text-red-700 hover:!bg-red-50"
           onClick={async () => {
             await orgApi.deleteTeam(orgId, team.id);
             qc.invalidateQueries({ queryKey: ["teams", orgId] });
@@ -172,9 +183,10 @@ function TeamCard({ orgId, team, isAdmin }: { orgId: number; team: Team; isAdmin
           Delete team
         </button>
       )}
-      <ul>
+      </div>
+      <ul className="m-0 list-none divide-y divide-slate-200 p-0">
         {members.map((m) => (
-          <li key={m.user_id}>
+          <li key={m.user_id} className="flex items-center justify-between gap-2 py-1.5 text-sm">
             {m.name}
             {isAdmin && (
               <button
@@ -191,6 +203,7 @@ function TeamCard({ orgId, team, isAdmin }: { orgId: number; team: Team; isAdmin
       </ul>
       {isAdmin && candidates.length > 0 && (
         <select
+          className="sm:max-w-xs"
           value=""
           onChange={async (e) => {
             await orgApi.addTeamMember(orgId, team.id, Number(e.target.value));

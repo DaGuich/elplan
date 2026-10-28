@@ -69,20 +69,22 @@ export function ProjectsListPage() {
   });
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
+    <div className="grid gap-6">
       <h2>Projects</h2>
       <ProjectForm />
-      <label className="layer-option"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} />Show archived projects</label>
+      <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" className="size-4 accent-emerald-700" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} />Show archived projects</label>
 
-      {isLoading && <p>Loading projects...</p>}
-      {isError && <p>Failed to load projects.</p>}
+      {isLoading && <p className="text-slate-500">Loading projects...</p>}
+      {isError && <p className="text-red-600">Failed to load projects.</p>}
+      {!isLoading && !isError && data.length === 0 && <p className="text-slate-500">No projects yet. Create your first one above.</p>}
 
-      <table border={1} cellPadding={8} style={{ borderCollapse: "collapse" }}>
-        <thead>
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <table className="w-full min-w-[560px] border-collapse text-left text-sm">
+        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id}>
               {hg.headers.map((h) => (
-                <th key={h.id}>
+                <th key={h.id} className="px-4 py-3 font-semibold">
                   {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
                 </th>
               ))}
@@ -91,14 +93,15 @@ export function ProjectsListPage() {
         </thead>
         <tbody>
           {table.getRowModel().rows.map((row) => (
-            <tr key={row.id}>
+            <tr key={row.id} className="border-t border-slate-100 hover:bg-slate-50">
               {row.getVisibleCells().map((cell) => (
-                <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
+                <td key={cell.id} className="px-4 py-3 align-middle">{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
               ))}
             </tr>
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

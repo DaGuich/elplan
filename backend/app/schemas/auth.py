@@ -1,10 +1,4 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
-
-
-class UserCreate(BaseModel):
-    email: EmailStr
-    name: str = Field(min_length=1, max_length=200)
-    password: str = Field(min_length=8, max_length=200)
+from pydantic import BaseModel, ConfigDict
 
 
 class UserRead(BaseModel):
@@ -12,13 +6,3 @@ class UserRead(BaseModel):
     id: int
     email: str
     name: str
-
-
-class LoginRequest(BaseModel):
-    email: str
-    password: str
-
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
