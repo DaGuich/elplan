@@ -36,6 +36,9 @@ function MetadataFields({ initial, projectId }: { initial: ProjectDetails; proje
     material_markup_percent: String(initial.material_markup_percent),
     nominal_voltage_v: initial.nominal_voltage_v?.toString() ?? "",
   });
+  const [templatePrices, setTemplatePrices] = useState(
+    initial.pricing_templates.map((template) => String(template.unit_price)),
+  );
   const [localError, setLocalError] = useState("");
 
   function patch(changes: Partial<ProjectDetails>) {
@@ -54,19 +57,28 @@ function MetadataFields({ initial, projectId }: { initial: ProjectDetails; proje
   function patchTemplate(index: number, changes: Partial<PricingTemplate>) {
     patch({ pricing_templates: form.pricing_templates.map((item, itemIndex) => itemIndex === index ? { ...item, ...changes } : item) });
   }
+  function setTemplatePrice(index: number, value: string) {
+    setSaved(false);
+    setTemplatePrices((current) => current.map((price, itemIndex) => itemIndex === index ? value : price));
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const markup = toNumber(numbers.material_markup_percent);
+    const pricingTemplates = form.pricing_templates.map((template, index) => ({
+      ...template,
+      unit_price: toNumber(templatePrices[index]) ?? Number.NaN,
+    }));
     const invalidOptional = (["nominal_voltage_v", "vat_percent", "main_fuse_a", "short_circuit_ka", "hourly_rate"] as const)
       .some((key) => numbers[key].trim() !== "" && toNumber(numbers[key]) === null);
-    if (markup === null || invalidOptional || form.pricing_templates.some((item) => !Number.isFinite(item.unit_price))) {
+    if (markup === null || invalidOptional || pricingTemplates.some((item) => !Number.isFinite(item.unit_price))) {
       setLocalError(t("Enter valid numbers; only the markup is required."));
       return;
     }
     setLocalError("");
     update.mutate({
       ...form,
+      pricing_templates: pricingTemplates,
       nominal_voltage_v: toNumber(numbers.nominal_voltage_v),
       vat_percent: toNumber(numbers.vat_percent),
       material_markup_percent: markup,
@@ -139,11 +151,17 @@ function MetadataFields({ initial, projectId }: { initial: ProjectDetails; proje
           <div className="pricing-template-row" key={index}>
             <input required maxLength={100} aria-label={t("Template name")} placeholder={t("Template name")} value={template.name} onChange={(event) => patchTemplate(index, { name: event.target.value })} />
             <input required maxLength={20} aria-label={t("Unit")} placeholder={t("Unit")} value={template.unit} onChange={(event) => patchTemplate(index, { unit: event.target.value })} />
-            <input required inputMode="decimal" aria-label={t("Unit price")} placeholder={t("Unit price")} value={Number.isFinite(template.unit_price) ? String(template.unit_price) : ""} onChange={(event) => patchTemplate(index, { unit_price: toNumber(event.target.value) ?? Number.NaN })} />
-            <button type="button" className="icon-button" aria-label={t("Remove pricing template")} onClick={() => patch({ pricing_templates: form.pricing_templates.filter((_, itemIndex) => itemIndex !== index) })}>×</button>
+            <input required inputMode="decimal" aria-label={t("Unit price")} placeholder={t("Unit price")} value={templatePrices[index] ?? ""} onChange={(event) => setTemplatePrice(index, event.target.value)} />
+            <button type="button" className="icon-button" aria-label={t("Remove pricing template")} onClick={() => {
+              patch({ pricing_templates: form.pricing_templates.filter((_, itemIndex) => itemIndex !== index) });
+              setTemplatePrices((current) => current.filter((_, itemIndex) => itemIndex !== index));
+            }}>×</button>
           </div>
         ))}
-        <button type="button" className="text-button" onClick={() => patch({ pricing_templates: [...form.pricing_templates, { name: "", unit: "piece", unit_price: 0 }] })}>＋ {t("Add pricing template")}</button>
+        <button type="button" className="text-button" onClick={() => {
+          patch({ pricing_templates: [...form.pricing_templates, { name: "", unit: "piece", unit_price: 0 }] });
+          setTemplatePrices((current) => [...current, "0"]);
+        }}>＋ {t("Add pricing template")}</button>
       </fieldset>
       {localError && <p className="editor-error" role="alert">{localError}</p>}
       {update.isError && <p className="editor-error" role="alert">{t("Could not save project metadata. Check the values and try again.")}</p>}

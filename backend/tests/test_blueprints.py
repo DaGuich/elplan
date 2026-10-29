@@ -1,18 +1,27 @@
 """Integration tests; require DATABASE_URL pointing at a migrated database."""
 
 import pytest
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
+
 from app.core.config import settings
 from app.core.db import SessionLocal
 from app.main import app
 from app.models.project import Floor
+from app.schemas.blueprint import BlueprintCalibration, BlueprintCalibrationUpdate
 from app.storage import get_storage
-from fastapi.testclient import TestClient
 from tests.test_access import make_user
 
 client = TestClient(app)
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 PNG2 = b"\x89PNG\r\n\x1a\n" + b"\x01" * 128
 JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 32
+
+
+@pytest.mark.parametrize("schema", [BlueprintCalibration, BlueprintCalibrationUpdate])
+def test_calibration_rejects_non_finite_crop(schema):
+    with pytest.raises(ValidationError):
+        schema(crop=(0, 0, float("nan"), 10))
 
 
 @pytest.fixture()

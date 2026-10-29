@@ -34,6 +34,19 @@ test("preserves holes of both rooms", () => {
   assert.equal(area(merged), 20000 - 400 - 100);
 });
 
+test("rejects merges whose combined hole count exceeds the persistence limit", () => {
+  const addHoles = (base, x) => {
+    let result = base;
+    for (let index = 0; index < 11; index += 1) {
+      result = ok(g.addRoomHole(result, g.rectangleRing(x + 5 + index * 8, 10, 2, 2)));
+    }
+    return result;
+  };
+  const first = addHoles(room("a", 0, 0, 100, 100), 0);
+  const second = addHoles(room("b", 100, 0, 100, 100), 100);
+  assert.equal(g.mergeRooms(first, second).code, "hole-limit");
+});
+
 test("merge order does not change area; result is valid", () => {
   const a = room("a", 0, 0, 100, 100);
   const b = room("b", 0, 100, 60, 40);

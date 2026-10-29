@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import {
   INSTALLATION_STANDARD_MAX,
   ROOM_TYPE_MAX,
@@ -6,6 +6,7 @@ import {
   STANDARD_SUGGESTIONS,
   isRoomMetadataEqual,
   normalizeRoomMetadata,
+  reconcileRoomMetadataDraft,
   validateRoomMetadata,
   type RoomMetadata,
 } from "../domain/room-metadata";
@@ -32,11 +33,17 @@ export type RoomMetadataEditorProps<T extends RoomMetadata = RoomMetadata> = {
 
 export function RoomMetadataEditor<T extends RoomMetadata>({ value, onSave, t, disabled = false }: RoomMetadataEditorProps<T>) {
   const id = useId();
+  const previousValue = useRef(value);
   const [draft, setDraft] = useState<RoomMetadata>({
     name: value.name,
     room_type: value.room_type ?? "",
     installation_standard: value.installation_standard ?? "",
   });
+  useLayoutEffect(() => {
+    const previous = previousValue.current;
+    setDraft((current) => reconcileRoomMetadataDraft(current, previous, value));
+    previousValue.current = value;
+  }, [value]);
   const errors = validateRoomMetadata(draft);
   const hasErrors = Object.keys(errors).length > 0;
   const dirty = !isRoomMetadataEqual(draft, value);

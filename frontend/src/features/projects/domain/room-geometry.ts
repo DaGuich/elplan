@@ -9,6 +9,7 @@
 import type { RoomPlanItem } from "../api";
 import { Point, pointInPolygon, signedArea } from "./room-detection";
 import {
+  MAX_ROOM_HOLES,
   MAX_ROOM_VERTICES,
   isValidRoomGeometry,
   roomHoles,
@@ -24,6 +25,7 @@ export type GeometryErrorCode =
   | "not-adjacent"
   | "overlap"
   | "vertex-limit"
+  | "hole-limit"
   | "hole-out-of-range"
   | "hole-overlap";
 
@@ -166,6 +168,7 @@ export function mergeGeometries(first: RoomGeometry, second: RoomGeometry): Geom
   const outlines = rings.filter((ring) => signedArea(ring) > 0);
   const holes = rings.filter((ring) => signedArea(ring) < 0);
   if (outlines.length !== 1) return fail("invalid-geometry", "Merge must produce exactly one outline.");
+  if (holes.length > MAX_ROOM_HOLES) return fail("hole-limit", "Merged room exceeds the hole limit.");
   if (outlines[0].length > MAX_ROOM_VERTICES || holes.some((hole) => hole.length > MAX_ROOM_VERTICES)) {
     return fail("vertex-limit", "Merged room exceeds the vertex limit.");
   }

@@ -175,6 +175,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
   const [showGroupLabels, setShowGroupLabels] = useState(true);
   const [showRoomOverlays, setShowRoomOverlays] = useState(true);
   const [detectedRooms, setDetectedRooms] = useState(false);
+  const acknowledgedSaveRef = useRef<FloorPlanData | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<DragState | null>(null);
   const vertexDragRef = useRef<{ roomId: string; index: number } | null>(null);
@@ -188,7 +189,9 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
     if (!query.data) return;
     const previous = loadedPlanRef.current;
     const next = query.data;
-    setData((current) => reconcileWorkspaceRefresh(current, previous, floorId, next));
+    const acknowledgedSave = acknowledgedSaveRef.current === next;
+    acknowledgedSaveRef.current = null;
+    setData((current) => reconcileWorkspaceRefresh(current, previous, floorId, next, acknowledgedSave));
     loadedPlanRef.current = { floorId, data: next };
   }, [floorId, query.data]);
 
@@ -1307,7 +1310,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
               const submitted = data;
               save.mutate(submitted, {
                 onSuccess: (saved) => {
-                  setData((current) => current === submitted ? saved : current);
+                  acknowledgedSaveRef.current = saved;
                   setFeedback(t("Save completed. Changes made while saving remain unsaved."));
                 },
                 onError: (error) => setFeedback(error instanceof ApiError && error.status === 409

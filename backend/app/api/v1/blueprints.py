@@ -14,6 +14,7 @@ from fastapi import (
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.core.db import get_db
@@ -76,8 +77,9 @@ async def post_blueprint(
     user: User = Depends(get_current_user),
 ):
     project = require_project_access(db, project_id, user)
-    return create_blueprint(
-        db, project, floor_id, await read_upload(file), file.filename, calibration
+    data = await read_upload(file)
+    return await run_in_threadpool(
+        create_blueprint, db, project, floor_id, data, file.filename, calibration
     )
 
 
@@ -90,7 +92,8 @@ async def put_blueprint(
     user: User = Depends(get_current_user),
 ):
     project = require_project_access(db, project_id, user)
-    return replace_blueprint(db, project, floor_id, await read_upload(file), file.filename)
+    data = await read_upload(file)
+    return await run_in_threadpool(replace_blueprint, db, project, floor_id, data, file.filename)
 
 
 @router.get("", response_model=BlueprintRead)

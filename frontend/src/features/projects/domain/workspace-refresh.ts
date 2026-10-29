@@ -7,6 +7,8 @@ export function reconcileWorkspaceRefresh(
   previous: LoadedWorkspace | null,
   floorId: number,
   next: FloorPlanData,
+  acknowledgedSave = false,
 ): FloorPlanData {
-  return !previous || previous.floorId !== floorId || current === previous.data ? next : current;
+  if (!previous || previous.floorId !== floorId || current === previous.data) return next;
+  return acknowledgedSave ? { ...current, topology_revision: next.topology_revision } : current;
 }

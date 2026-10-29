@@ -40,3 +40,15 @@ export function isRoomMetadataEqual(a: RoomMetadata, b: RoomMetadata): boolean {
   const y = normalizeRoomMetadata(b);
   return x.name === y.name && x.room_type === y.room_type && x.installation_standard === y.installation_standard;
 }
+
+export function reconcileRoomMetadataDraft(
+  draft: RoomMetadata,
+  previousValue: RoomMetadata,
+  nextValue: RoomMetadata,
+): RoomMetadata {
+  return isRoomMetadataEqual(draft, previousValue) ? {
+    name: nextValue.name,
+    room_type: nextValue.room_type ?? "",
+    installation_standard: nextValue.installation_standard ?? "",
+  } : draft;
+}

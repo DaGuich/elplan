@@ -22,3 +22,12 @@ test("equality ignores whitespace and null/empty differences", () => {
   assert.ok(m.isRoomMetadataEqual({ name: "A", room_type: "" }, { name: "A ", room_type: null }));
   assert.ok(!m.isRoomMetadataEqual({ name: "A", room_type: "Bad" }, { name: "A" }));
 });
+test("refreshes pristine drafts but preserves unsaved room metadata", () => {
+  const previous = { name: "Kitchen", room_type: "Kitchen" };
+  const next = { name: "New kitchen", room_type: "Kitchen", installation_standard: "DIN 18015-2" };
+  assert.deepEqual(m.reconcileRoomMetadataDraft(previous, previous, next), {
+    name: "New kitchen", room_type: "Kitchen", installation_standard: "DIN 18015-2",
+  });
+  const edited = { ...previous, room_type: "Pantry" };
+  assert.equal(m.reconcileRoomMetadataDraft(edited, previous, next), edited);
+});

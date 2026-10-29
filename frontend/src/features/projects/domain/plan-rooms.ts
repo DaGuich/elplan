@@ -21,6 +21,7 @@ import {
 } from "./room-detection";
 
 export const MAX_ROOM_VERTICES = 200;
+export const MAX_ROOM_HOLES = 20;
 export const MAX_ROOMS = 100;
 export const DETECTED_ROOM_COLOR = "#eaf3f1";
 

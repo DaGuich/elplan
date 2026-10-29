@@ -4,6 +4,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class BlueprintCalibration(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
     scale_mm_per_pixel: float | None = Field(default=None, gt=0, le=100_000)
     origin_x: float = Field(default=0, ge=-1e9, le=1e9)
     origin_y: float = Field(default=0, ge=-1e9, le=1e9)
@@ -30,6 +32,8 @@ class BlueprintExport(BlueprintCalibration):
 
 class BlueprintCalibrationUpdate(BaseModel):
     """PATCH semantics: only fields that are sent are changed."""
+
+    model_config = ConfigDict(allow_inf_nan=False)
 
     scale_mm_per_pixel: float | None = Field(default=None, gt=0, le=100_000)
     origin_x: float | None = Field(default=None, ge=-1e9, le=1e9)

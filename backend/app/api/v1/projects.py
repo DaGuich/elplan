@@ -52,6 +52,8 @@ from app.services.project_service import (
 from app.services.topology import ensure_legacy_topology, export_topology
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+MAX_TOPOLOGY_WARNINGS_HEADER_BYTES = 4096
+TOPOLOGY_WARNINGS_TRUNCATED = "Additional topology warnings omitted."
 
 
 @router.get("", response_model=list[ProjectRead])
@@ -335,7 +337,23 @@ def _attach_topology_warnings(response: Response, data: dict) -> None:
         response.headers["X-Topology-Revision"] = str(data["topology_revision"])
     warnings = data.pop("topology_warnings", [])
     if warnings:
-        response.headers["X-Topology-Warnings"] = json.dumps(warnings[:20], ensure_ascii=True)
+        included = []
+        truncated = len(warnings) > 20
+        for warning in warnings[:20]:
+            candidate = json.dumps([*included, warning], ensure_ascii=True)
+            if len(candidate.encode("ascii")) > MAX_TOPOLOGY_WARNINGS_HEADER_BYTES:
+                truncated = True
+                break
+            included.append(warning)
+        if truncated:
+            while len(
+                json.dumps([*included, TOPOLOGY_WARNINGS_TRUNCATED], ensure_ascii=True).encode(
+                    "ascii"
+                )
+            ) > MAX_TOPOLOGY_WARNINGS_HEADER_BYTES:
+                included.pop()
+            included.append(TOPOLOGY_WARNINGS_TRUNCATED)
+        response.headers["X-Topology-Warnings"] = json.dumps(included, ensure_ascii=True)
 
 
 @router.patch("/{project_id}", response_model=ProjectRead)

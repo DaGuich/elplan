@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from copy import deepcopy
 
 from fastapi import HTTPException, status
@@ -819,8 +820,14 @@ def project_plan_topology(
                 placement_floors.setdefault(placement["id"], []).append(floor)
     for board in list_boards(db, project):
         board_rcds = (board.data or {}).get("rcds", [])
+        if not isinstance(board_rcds, list):
+            warnings.append(f"Board {board.name}: RCD metadata is invalid.")
+            board_rcds = []
         board_circuits = list_circuits(db, board)
         for rcd in board_rcds:
+            if not isinstance(rcd, Mapping):
+                warnings.append(f"Board {board.name}: RCD metadata is invalid.")
+                continue
             required = {"id", "name", "rated_current_ma", "poles", "type"}
             if not required.issubset(rcd):
                 warnings.append(f"Board {board.name}: RCD metadata is incomplete.")
@@ -856,14 +863,6 @@ def project_plan_topology(
                     f"Circuit {circuit.name}: incomplete schematic data; circuit hidden."
                 )
                 continue
-            if data["rcd_id"] in ambiguous_rcd_ids:
-                continue
-            if data["rcd_id"] not in known_rcd_ids:
-                warnings.append(
-                    f"Circuit {circuit.name}: protection device is missing or incomplete; "
-                    "circuit hidden."
-                )
-                continue
             circuit_id = circuit.source_id
             try:
                 validated_circuit = ElectricalCircuit.model_validate(
@@ -876,6 +875,14 @@ def project_plan_topology(
                 ).model_dump()
             except ValidationError:
                 warnings.append(f"Circuit {circuit.name}: invalid schematic data; circuit hidden.")
+                continue
+            if validated_circuit["rcd_id"] in ambiguous_rcd_ids:
+                continue
+            if validated_circuit["rcd_id"] not in known_rcd_ids:
+                warnings.append(
+                    f"Circuit {circuit.name}: protection device is missing or incomplete; "
+                    "circuit hidden."
+                )
                 continue
             load_ids: list[str] = []
             for load in list_loads(db, circuit):
