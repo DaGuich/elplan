@@ -219,6 +219,22 @@ export function addRoomHole(room: RoomPlanItem, hole: Point[]): GeometryResult<R
   return result.ok ? result : fail("hole-overlap", "The hole overlaps or touches another hole.");
 }
 
+export function addRectangularRoomHole(
+  room: RoomPlanItem,
+  start: Point,
+  end: Point,
+): GeometryResult<RoomPlanItem> {
+  const ring = rectangleRing(
+    Math.min(start.x, end.x),
+    Math.min(start.y, end.y),
+    Math.abs(end.x - start.x),
+    Math.abs(end.y - start.y),
+  );
+  return ring
+    ? addRoomHole(room, ring)
+    : fail("invalid-geometry", "A rectangular hole needs a positive width and height.");
+}
+
 /** Replaces the hole at `index` with a new ring. */
 export function replaceRoomHole(room: RoomPlanItem, index: number, hole: Point[]): GeometryResult<RoomPlanItem> {
   const existing = roomHoles(room);

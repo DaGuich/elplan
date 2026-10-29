@@ -45,7 +45,7 @@ import {
   toPolygonRoom,
   translateRoom,
 } from "../domain/plan-rooms";
-import { mergeRooms } from "../domain/room-geometry";
+import { addRectangularRoomHole, mergeRooms, removeRoomHole } from "../domain/room-geometry";
 import { LoadedWorkspace, reconcileWorkspaceRefresh } from "../domain/workspace-refresh";
 import { resolveRcdBoard } from "../domain/rcd-board";
 import { useI18n } from "../../../i18n";
@@ -59,7 +59,7 @@ type Props = {
 };
 
 type ViewTab = "layout" | "circuits" | "schematic" | "cabinet" | "smart" | "documentation";
-type Tool = "select" | "room" | "scale" | "dimension" | PlanPlacement["kind"];
+type Tool = "select" | "room" | "scale" | "dimension" | "hole" | PlanPlacement["kind"];
 type DragState = {
   kind: "room" | "placement";
   ids: string[];
@@ -69,6 +69,7 @@ type DragState = {
   originY: number;
   positions: Map<string, { x: number; y: number }>;
 };
+type HoleDraft = { roomId: string; start: { x: number; y: number }; end: { x: number; y: number } };
 
 const symbolKinds: { kind: PlanPlacement["kind"]; label: string; glyph: string }[] = [
   { kind: "socket", label: "Socket", glyph: "S" },
@@ -180,6 +181,7 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
   const dragRef = useRef<DragState | null>(null);
   const vertexDragRef = useRef<{ roomId: string; index: number } | null>(null);
   const [splitState, setSplitState] = useState<{ roomId: string; first: number | null } | null>(null);
+  const [holeDraft, setHoleDraft] = useState<HoleDraft | null>(null);
   const panRef = useRef<{ pointerId: number; clientX: number; clientY: number } | null>(null);
   const touchesRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef<{ distance: number; midpoint: { x: number; y: number } } | null>(null);
@@ -405,6 +407,23 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
   function beginDrag(event: PointerEvent<SVGElement>, kind: DragState["kind"], id: string, x: number, y: number) {
     if (event.button === 1 || (event.shiftKey && tool === "select") || pinchRef.current) return;
     if (event.button !== 0) return;
+    if (tool === "hole") {
+      if (!selectedRoom || (kind === "room" && selectedRoom.id !== id)) {
+        setFeedback(t("Select the room before drawing a hole."));
+        return;
+      }
+      event.stopPropagation();
+      const svg = event.currentTarget instanceof SVGSVGElement ? event.currentTarget : event.currentTarget.ownerSVGElement;
+      if (!svg) return;
+      const point = svgPoint(svg, event);
+      if (!roomContains(selectedRoom, point.x, point.y)) {
+        setFeedback(t("Draw the hole inside the selected room."));
+        return;
+      }
+      setHoleDraft({ roomId: selectedRoom.id, start: point, end: point });
+      svg.setPointerCapture(event.pointerId);
+      return;
+    }
     event.stopPropagation();
     const svg = event.currentTarget instanceof SVGSVGElement ? event.currentTarget : event.currentTarget.ownerSVGElement;
     if (!svg) return;
@@ -445,6 +464,15 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
     }
     if (event.button !== 0) return;
     const point = svgPoint(svgRef.current, event);
+    if (tool === "hole") {
+      if (!selectedRoom || !roomContains(selectedRoom, point.x, point.y)) {
+        setFeedback(t("Draw the hole inside the selected room."));
+        return;
+      }
+      setHoleDraft({ roomId: selectedRoom.id, start: point, end: point });
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
     if (tool === "room") {
       const room: RoomPlanItem = {
         id: newId(),
@@ -521,6 +549,10 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
 
   function handleCanvasMove(event: PointerEvent<SVGSVGElement>) {
     if (pinchRef.current) return;
+    if (holeDraft && svgRef.current) {
+      setHoleDraft({ ...holeDraft, end: svgPoint(svgRef.current, event) });
+      return;
+    }
     if (panRef.current?.pointerId === event.pointerId && svgRef.current) {
       const matrix = svgRef.current.getScreenCTM();
       if (!matrix) return;
@@ -695,6 +727,24 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
   }
 
   function handlePointerEnd(event: PointerEvent<SVGSVGElement>) {
+    if (holeDraft && event.type === "pointerup") {
+      const room = data.rooms.find((item) => item.id === holeDraft.roomId);
+      const result = room ? addRectangularRoomHole(room, holeDraft.start, holeDraft.end) : null;
+      if (room && result?.ok) {
+        update({ rooms: data.rooms.map((item) => item.id === room.id ? result.value : item) });
+        setFeedback(t("Room hole added."));
+      } else {
+        setFeedback(result
+          ? t("The hole must fit inside the room without overlapping another hole.")
+          : t("Drag to draw a hole with a positive width and height."));
+      }
+      setHoleDraft(null);
+      setTool("select");
+    }
+    if (event.type === "pointercancel") {
+      setHoleDraft(null);
+      setTool("select");
+    }
     touchesRef.current.delete(event.pointerId);
     if (touchesRef.current.size < 2) pinchRef.current = null;
     dragRef.current = null;
@@ -1441,6 +1491,11 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
               <button type="button" className={tool === "dimension" ? "tool active" : "tool"} onClick={() => { setMeasurementStart(null); setTool(tool === "dimension" ? "select" : "dimension"); }}>＋ {t("Add dimension")}</button>
               <button type="button" className="tool" onClick={addFreeNote}>＋ {t("Add note")}</button>
               <button type="button" className="tool" onClick={() => void detectRoomRegions()}>{detectedRooms ? t("Detect more rooms") : t("Detect rooms (beta)")}</button>
+              {selectedRoom && <button type="button" className={tool === "hole" ? "tool active" : "tool"} onClick={() => {
+                setHoleDraft(null);
+                setTool(tool === "hole" ? "select" : "hole");
+                setFeedback(tool === "hole" ? "" : t("Drag inside the selected room to draw a hole."));
+              }}>{t("Draw room hole")}</button>}
               {data.rooms.some((room) => room.needs_review) && (
                 <p className="room-warning" role="status">{data.rooms.filter((room) => room.needs_review).length} {t("detected rooms still need review. Detection is heuristic; verify outlines and areas against the plan.")}</p>
               )}
@@ -1519,6 +1574,19 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
                     return area === null ? t("Area: calibrate the plan scale to see m²") : `${t("Area")}: ${area.toFixed(2)} m²${roomHoles(selectedRoom).length ? ` (${t("holes excluded")})` : ""}`;
                   })()}
                 </p>
+                {roomHoles(selectedRoom).map((_, index) => (
+                  <button
+                    type="button"
+                    className="text-button"
+                    key={`hole-${index}`}
+                    onClick={() => {
+                      const result = removeRoomHole(selectedRoom, index);
+                      if (result.ok) update({ rooms: data.rooms.map((room) => room.id === selectedRoom.id ? result.value : room) });
+                    }}
+                  >
+                    {t("Remove hole {{number}}", { number: index + 1 })}
+                  </button>
+                ))}
                 {hasPolygon(selectedRoom) ? (
                   <>
                     <button type="button" className={splitState?.roomId === selectedRoom.id ? "tool active" : "tool"} onClick={() => {
@@ -1674,6 +1742,16 @@ export function FloorPlanEditor({ projectId, floorId, floorName, projectName }: 
                   {!hasPolygon(room) && selectedIds.includes(room.id) && <rect x={room.x + room.width - 6} y={room.y + room.height - 6} width="12" height="12" className="selection-handle" />}
                 </g>
               ))}
+              {holeDraft && (
+                <rect
+                  x={Math.min(holeDraft.start.x, holeDraft.end.x)}
+                  y={Math.min(holeDraft.start.y, holeDraft.end.y)}
+                  width={Math.abs(holeDraft.end.x - holeDraft.start.x)}
+                  height={Math.abs(holeDraft.end.y - holeDraft.start.y)}
+                  className="room-hole-preview"
+                  pointerEvents="none"
+                />
+              )}
               {tool === "select" && selectedRoom && hasPolygon(selectedRoom) && selectedIds.length === 1 && layerIsVisible(selectedRoom.layer_id) && (() => {
                 const outline = roomOutline(selectedRoom);
                 const splitting = splitState?.roomId === selectedRoom.id;

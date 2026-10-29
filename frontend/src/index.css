@@ -632,6 +632,13 @@ select:focus {
   stroke-dasharray: 8 5;
 }
 
+.room-hole-preview {
+  fill: #ca834c55;
+  stroke: #b65b24;
+  stroke-dasharray: 5 3;
+  stroke-width: 2;
+}
+
 .room-warning {
   border: 1px solid #d9a441;
   background: #fff6e0;
