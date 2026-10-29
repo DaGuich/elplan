@@ -101,6 +101,15 @@ test("manual holes: add, replace, remove and validation", () => {
   assert.equal(g.removeRoomHole(removed, 0).ok, false);
 });
 
+test("rectangular hole drawing normalizes drag direction and rejects degenerate or out-of-room boxes", () => {
+  const base = room("a", 0, 0, 100, 100);
+  const drawn = ok(g.addRectangularRoomHole(base, { x: 30, y: 40 }, { x: 10, y: 20 }));
+  assert.equal(area(drawn), 9600);
+  assert.deepEqual(drawn.holes[0], [[10, 20], [30, 20], [30, 40], [10, 40]]);
+  assert.equal(g.addRectangularRoomHole(base, { x: 10, y: 10 }, { x: 10, y: 30 }).ok, false);
+  assert.equal(g.addRectangularRoomHole(base, { x: 90, y: 90 }, { x: 110, y: 110 }).ok, false);
+});
+
 test("area stays precise far from the origin", () => {
   const big = g.geometryArea(g.rectangleRing(1e6, 1e6, 0.5, 0.25));
   assert.equal(big, 0.125);
