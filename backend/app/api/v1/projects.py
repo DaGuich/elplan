@@ -1,3 +1,8 @@
+import json
+
+from fastapi import APIRouter, Depends, Header, Response, status
+from sqlalchemy.orm import Session
+
 from app.core.db import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
@@ -19,6 +24,8 @@ from app.schemas.project import (
     PublicProjectRead,
 )
 from app.services.access import require_project_access
+from app.services.blueprint_service import export_blueprint
+from app.services.project_details import export_details
 from app.services.project_service import (
     create_building,
     create_floor,
@@ -42,10 +49,11 @@ from app.services.project_service import (
     update_project,
     write_floor_plan_data,
 )
-from fastapi import APIRouter, Depends, Header, Response, status
-from sqlalchemy.orm import Session
+from app.services.topology import ensure_legacy_topology, export_topology
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+MAX_TOPOLOGY_WARNINGS_HEADER_BYTES = 4096
+TOPOLOGY_WARNINGS_TRUNCATED = "Additional topology warnings omitted."
 
 
 @router.get("", response_model=list[ProjectRead])
@@ -60,7 +68,9 @@ def get_projects(
 
 @router.post("", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
 def post_project(
-    payload: ProjectCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+    payload: ProjectCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     return create_project(db, user, payload)
 
@@ -85,12 +95,18 @@ def get_shared_project(
 
 @router.get("/{project_id}", response_model=ProjectRead)
 def get_project(
-    project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     return require_project_access(db, project_id, user)
 
 
-@router.post("/{project_id}/duplicate", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{project_id}/duplicate",
+    response_model=ProjectRead,
+    status_code=status.HTTP_201_CREATED,
+)
 def post_project_duplicate(
     project_id: int,
     db: Session = Depends(get_db),
@@ -111,7 +127,11 @@ def post_project_transfer(
     return transfer_project(db, user, project, payload)
 
 
-@router.post("/{project_id}/shares", response_model=ProjectShareRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{project_id}/shares",
+    response_model=ProjectShareRead,
+    status_code=status.HTTP_201_CREATED,
+)
 def post_project_share(
     project_id: int,
     payload: ProjectShareCreate,
@@ -155,17 +175,24 @@ def export_project(
     user: User = Depends(get_current_user),
 ):
     project = require_project_access(db, project_id, user)
+    if ensure_legacy_topology(db, project):
+        db.commit()
     buildings = list_buildings(db, project)
     return {
         "name": project.name,
         "description": project.description,
+        "details": export_details(db, project),
+        "topology": export_topology(db, project),
         "buildings": [
             {
                 "name": building.name,
                 "floors": [
                     {
                         "name": floor.name,
-                        "plan_data": FloorPlanData.model_validate(floor.plan_data).model_dump(),
+                        "plan_data": FloorPlanData.model_validate(
+                            read_floor_plan_data(db, project, floor.id)
+                        ).model_dump(),
+                        "blueprint": export_blueprint(db, floor),
                     }
                     for floor in building.floors
                 ],
@@ -177,7 +204,9 @@ def export_project(
 
 @router.get("/{project_id}/buildings", response_model=list[BuildingRead])
 def get_buildings(
-    project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     project = require_project_access(db, project_id, user)
     return list_buildings(db, project)
@@ -278,11 +307,14 @@ def remove_floor(
 def read_floor_plan(
     project_id: int,
     floor_id: int,
+    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     project = require_project_access(db, project_id, user)
-    return read_floor_plan_data(db, project, floor_id)
+    data = read_floor_plan_data(db, project, floor_id)
+    _attach_topology_warnings(response, data)
+    return data
 
 
 @router.put("/{project_id}/floors/{floor_id}/plan", response_model=FloorPlanData)
@@ -290,11 +322,38 @@ def put_floor_plan(
     project_id: int,
     floor_id: int,
     payload: FloorPlanData,
+    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     project = require_project_access(db, project_id, user)
-    return write_floor_plan_data(db, project, floor_id, payload)
+    data = write_floor_plan_data(db, project, floor_id, payload)
+    _attach_topology_warnings(response, data)
+    return data
+
+
+def _attach_topology_warnings(response: Response, data: dict) -> None:
+    if "topology_revision" in data:
+        response.headers["X-Topology-Revision"] = str(data["topology_revision"])
+    warnings = data.pop("topology_warnings", [])
+    if warnings:
+        included = []
+        truncated = len(warnings) > 20
+        for warning in warnings[:20]:
+            candidate = json.dumps([*included, warning], ensure_ascii=True)
+            if len(candidate.encode("ascii")) > MAX_TOPOLOGY_WARNINGS_HEADER_BYTES:
+                truncated = True
+                break
+            included.append(warning)
+        if truncated:
+            while len(
+                json.dumps([*included, TOPOLOGY_WARNINGS_TRUNCATED], ensure_ascii=True).encode(
+                    "ascii"
+                )
+            ) > MAX_TOPOLOGY_WARNINGS_HEADER_BYTES:
+                included.pop()
+            included.append(TOPOLOGY_WARNINGS_TRUNCATED)
+        response.headers["X-Topology-Warnings"] = json.dumps(included, ensure_ascii=True)
 
 
 @router.patch("/{project_id}", response_model=ProjectRead)
@@ -310,7 +369,9 @@ def patch_project(
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_project(
-    project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     delete_project(db, require_project_access(db, project_id, user))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useId, useMemo, useState } from "react";
 
 import {
   ElectricalCircuit,
@@ -8,6 +8,13 @@ import {
   ResidualCurrentDevice,
   TestMeasurement,
 } from "../api";
+import { cropLayout } from "../domain/plan-crop";
+import { useParams, Link } from "@tanstack/react-router";
+
+import { applyPricingTemplates } from "../domain/pricing";
+import { resolveProjectIdentity } from "../domain/project-identity";
+import { useProjectDetails } from "../queries";
+import { hasPolygon, labelAnchor, roomPath } from "../domain/plan-rooms";
 import { useI18n } from "../../../i18n";
 
 type Props = {
@@ -66,10 +73,18 @@ function csvCell(value: string | number) {
 
 export function DocumentationPanel({ data, floorName, projectName, active = true, onChange }: Props) {
   const { t } = useI18n();
+  const clipId = `handbook-plan-clip-${useId().replace(/[^A-Za-z0-9_-]/g, "")}`;
   const [importMessage, setImportMessage] = useState("");
+  const [templateMessage, setTemplateMessage] = useState("");
+  const { projectId } = useParams({ strict: false });
+  const numericProjectId = Number(projectId);
+  const details = useProjectDetails(numericProjectId);
+  const templates = details.data?.pricing_templates ?? [];
   const annotation = data.annotation;
+  const identity = resolveProjectIdentity(details.data, annotation);
   const total = data.prices.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
   const passed = data.measurements.filter((item) => item.passed).length;
+  const cropView = cropLayout(data, data.background_rotation);
 
   const circuitTotals = useMemo(() => {
     const byRcd = new Map<string, number>();
@@ -189,6 +204,12 @@ export function DocumentationPanel({ data, floorName, projectName, active = true
     URL.revokeObjectURL(url);
   }
 
+  function applyTemplates() {
+    const result = applyPricingTemplates(data.prices, templates);
+    if (result.applied) onChange({ prices: result.prices });
+    setTemplateMessage(t("{{count}} prices filled from project templates.", { count: result.applied }));
+  }
+
   function refreshBom() {
     const autoItems = makeBom(data);
     const manualItems = data.prices.filter((item) => item.source_id === null);
@@ -218,8 +239,11 @@ export function DocumentationPanel({ data, floorName, projectName, active = true
         <section className="documentation-card">
           <h5>{t("Title block & presentation")}</h5>
           <label>{t("Document title")}<input value={annotation.title} onChange={(event) => updateAnnotation({ title: event.target.value })} /></label>
-          <label>{t("Customer / client")}<input value={annotation.customer_name} onChange={(event) => updateAnnotation({ customer_name: event.target.value })} /></label>
-          <label>{t("Project number")}<input value={annotation.project_number} onChange={(event) => updateAnnotation({ project_number: event.target.value })} /></label>
+          <div className="field-hint" data-testid="project-identity">
+            <p>{t("Customer / client")}: <strong>{identity.customer || "—"}</strong>{identity.customerLegacy && ` (${t("legacy floor value")})`}</p>
+            <p>{t("Project number")}: <strong>{identity.number || "—"}</strong>{identity.numberLegacy && ` (${t("legacy floor value")})`}</p>
+            <p>{t("Customer and project number are managed in the project details.")}</p>
+          </div>
           <label>{t("Presentation mode")}<select value={annotation.presentation_mode} onChange={(event) => updateAnnotation({ presentation_mode: event.target.value as ProjectAnnotation["presentation_mode"] })}><option value="planning">{t("Planning / technical")}</option><option value="client">{t("Client consultation")}</option></select></label>
           <label>{t("Legend")}<textarea rows={4} value={annotation.legend} onChange={(event) => updateAnnotation({ legend: event.target.value })} /></label>
           <label>{t("Project notes")}<textarea rows={5} value={annotation.notes} onChange={(event) => updateAnnotation({ notes: event.target.value })} /></label>
@@ -247,7 +271,13 @@ export function DocumentationPanel({ data, floorName, projectName, active = true
       </div>
       <section className="documentation-card">
         <div className="card-title-row"><h5>{t("Price template & quantity take-off")}</h5><button type="button" className="button-secondary" onClick={refreshBom}>{t("Refresh quantities from plan")}</button></div>
-        <p className="field-hint">{t("Enter unit prices for devices, installation labor, and cabling. Quantities are counted from the plan and circuit schedule.")}</p>
+        <p className="field-hint">{t("Quantities are counted from the plan and circuit schedule. Currency, VAT, hourly rate, markup and pricing templates are managed in the project details.")}</p>
+        <div className="card-title-row">
+          {Number.isFinite(numericProjectId) && <Link className="text-button" to="/projects/$projectId/details" params={{ projectId: String(numericProjectId) }}>{t("Edit project pricing")}</Link>}
+          <button type="button" className="button-secondary" disabled={!templates.length || !data.prices.length} onClick={applyTemplates}>{t("Apply project pricing templates")}</button>
+        </div>
+        <p className="field-hint">{t("Totals shown here are net sums of quantity × unit price. VAT, material markup and hourly rates from the project details are not included.")}</p>
+        {templateMessage && <p className="editor-status" role="status">{templateMessage}</p>}
         <div className="bom-table-wrap"><table className="bom-table"><thead><tr><th>{t("Category")}</th><th>{t("Description")}</th><th>{t("Quantity")}</th><th>{t("Unit")}</th><th>{t("Unit price")}</th><th>{t("Line total")}</th><th /></tr></thead><tbody>
           {data.prices.map((item) => <tr key={item.id}>
             <td><select value={item.category} onChange={(event) => onChange({ prices: data.prices.map((row) => row.id === item.id ? { ...row, category: event.target.value as PriceEntry["category"] } : row) })}><option value="device">{t("Device")}</option><option value="labor">{t("Labor")}</option><option value="cable">{t("Cable")}</option><option value="other">{t("Other")}</option></select></td>
@@ -280,9 +310,14 @@ export function DocumentationPanel({ data, floorName, projectName, active = true
         </div>
       </section>
       <div className="print-handbook">
-        <header className="handbook-cover"><p>{t("ELPLAN · ELECTRICAL PLANNING")}</p><h1>{annotation.title || projectName}</h1><h2>{floorName}</h2><p>{annotation.customer_name} {annotation.project_number && `· ${annotation.project_number}`}</p></header>
+        <header className="handbook-cover"><p>{t("ELPLAN · ELECTRICAL PLANNING")}</p><h1>{annotation.title || projectName}</h1><h2>{floorName}</h2><p>{identity.customer} {identity.number && `· ${identity.number}`}</p></header>
         {annotation.notes && <section><h2>{t("Project notes")}</h2><p>{annotation.notes}</p></section>}
-        <section><h2>{t("Floor plan & installation points")}</h2><svg viewBox="0 0 1000 700" className="handbook-plan">{data.background_image && <image href={data.background_image} width="1000" height="700" preserveAspectRatio="xMidYMid meet" opacity={data.background_opacity} />}{data.rooms.map((room) => <g key={room.id}><rect x={room.x} y={room.y} width={room.width} height={room.height} fill={room.color} fillOpacity=".45" stroke="#68877f" strokeWidth="2" /><text x={room.x + 10} y={room.y + 22}>{room.name}</text></g>)}{data.placements.map((item) => <g key={item.id} transform={`translate(${item.x},${item.y})`}><circle r="13" fill="#fff" stroke={item.color} strokeWidth="2" /><text textAnchor="middle" dominantBaseline="central" fontSize="8">{item.element_id || item.kind.slice(0, 3).toUpperCase()}</text><text y="25" textAnchor="middle" fontSize="9">{item.label}</text></g>)}</svg><p>{data.rooms.length} {t("rooms")} · {data.placements.length} {t("installation points")} · {t("scale")} {data.scale_m_per_100_units ?? t("not calibrated")} m / 100 {t("units")}</p></section>
+        <section><h2>{t("Floor plan & installation points")}</h2><svg viewBox="0 0 1000 700" className="handbook-plan">
+          <defs><clipPath id={clipId}><rect width="1000" height="700" /></clipPath>{cropView.clip && <clipPath id={`${clipId}-crop`}><rect {...cropView.clip} /></clipPath>}</defs>
+          {data.background_image && <g clipPath={`url(#${clipId})`} opacity={data.background_opacity}><g transform={`rotate(${data.background_rotation},500,350)`}><image href={data.background_image} {...cropView.image} preserveAspectRatio="none" clipPath={cropView.clip ? `url(#${clipId}-crop)` : undefined} /></g></g>}
+          {data.rooms.map((room) => <g key={room.id}>{hasPolygon(room) ? <path d={roomPath(room)} fillRule="evenodd" fill={room.color} fillOpacity=".45" stroke="#68877f" strokeWidth="2" /> : <rect x={room.x} y={room.y} width={room.width} height={room.height} fill={room.color} fillOpacity=".45" stroke="#68877f" strokeWidth="2" />}{hasPolygon(room) ? <text x={labelAnchor(room).x} y={labelAnchor(room).y} textAnchor="middle">{room.name}</text> : <text x={room.x + 10} y={room.y + 22}>{room.name}</text>}</g>)}
+          {data.placements.map((item) => <g key={item.id} transform={`translate(${item.x},${item.y}) rotate(${item.rotation})`}><circle r="13" fill="#fff" stroke={item.color} strokeWidth="2" /><text textAnchor="middle" dominantBaseline="central" fontSize="8">{item.element_id || item.kind.slice(0, 3).toUpperCase()}</text><text y="25" textAnchor="middle" fontSize="9">{item.label}</text></g>)}
+        </svg><p>{data.rooms.length} {t("rooms")} · {data.placements.length} {t("installation points")} · {t("scale")} {data.scale_m_per_100_units ?? t("not calibrated")} m / 100 {t("units")}</p></section>
         <section><h2>{t("Circuits & protection")}</h2>{data.rcds.map((rcd, index) => <div key={rcd.id}><h3>F{index + 1} · {rcd.name} · {t("Type")} {rcd.type} · {rcd.rated_current_ma} mA</h3><table className="handbook-table"><thead><tr><th>{t("Ref.")}</th><th>{t("Circuit")}</th><th>{t("MCB")}</th><th>{t("Supply")}</th><th>{t("Cable")}</th><th>{t("Loads")}</th></tr></thead><tbody>{data.circuits.filter((circuit) => circuit.rcd_id === rcd.id).map((circuit) => <tr key={circuit.id}><td>{circuitNumber(circuit, data.rcds, data.circuits)}</td><td>{circuit.name}</td><td>{circuit.poles}P {circuit.breaker_type}{circuit.rated_current_a}</td><td>{t(circuit.supply)}</td><td>{circuit.cable}</td><td>{circuit.loads.map((loadId) => data.placements.find((item) => item.id === loadId)?.label).filter(Boolean).join(", ")}</td></tr>)}</tbody></table><p>{circuitTotals.get(rcd.id) ?? 0} {t("circuits")} · X{index + 1} {t("terminal group")}</p></div>)}</section>
         <section><h2>{t("Cabinet assembly plan")}</h2><p>{t(data.cabinet.name)} · {data.cabinet.manufacturer ?? ""} {data.cabinet.model ?? ""} · {data.cabinet.rows} {t("rows")} × {data.cabinet.columns} TE</p>{data.cabinet.rails.map((rail) => <p key={rail.id}><strong>{t(rail.name)}:</strong> {data.cabinet.modules.filter((module) => module.rail_id === rail.id).sort((a, b) => a.position - b.position).map((module) => t("{{name}} ({{width}} TE, position {{position}})", { name: t(module.name), width: module.te_width, position: module.position + 1 })).join(" · ") || t("spare space")}</p>)}{data.cabinet.mounting_notes && <p>{data.cabinet.mounting_notes}</p>}</section>
         <section><h2>{t("Smart building & bus devices")}</h2>{data.smart_devices.map((device) => <article key={device.id}><h3>{device.system.toUpperCase()} · {device.name}</h3><p>{device.model} {device.line} {device.address}</p>{device.channels.map((channel) => <p key={channel.id}>{channel.name} ({t(channel.kind)}, {channel.address}) → {channel.load_ids.map((id) => data.placements.find((item) => item.id === id)?.label).filter(Boolean).join(", ")}</p>)}</article>)}</section>

@@ -628,6 +628,44 @@ select:focus {
   stroke-width: 3;
 }
 
+.room-shape.review {
+  stroke-dasharray: 8 5;
+}
+
+.room-warning {
+  border: 1px solid #d9a441;
+  background: #fff6e0;
+  color: #6b4a07;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 0.85rem;
+}
+
+.vertex-handle {
+  fill: #16816c;
+  stroke: #fff;
+  stroke-width: 2;
+  cursor: move;
+}
+
+.vertex-handle.split-start {
+  fill: #ca834c;
+}
+
+.vertex-add circle {
+  fill: #fff;
+  stroke: #16816c;
+  stroke-width: 1.5;
+  cursor: copy;
+}
+
+.vertex-add path {
+  stroke: #16816c;
+  stroke-width: 1.5;
+  fill: none;
+  pointer-events: none;
+}
+
 .room-label {
   fill: #526a66;
   font-size: 14px;
@@ -1586,5 +1624,39 @@ select:focus {
 
   .floor-canvas {
     min-height: 340px;
+  }
+}
+
+.project-details-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  align-items: start;
+  gap: 20px;
+}
+
+.details-column {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #e2e8ef;
+  border-radius: 12px;
+  background: #fff;
+}
+
+a.button-secondary,
+a.button-primary {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+a.floor-option {
+  text-decoration: none;
+  color: inherit;
+}
+
+@media (max-width: 1050px) {
+  .project-details-grid {
+    grid-template-columns: 1fr;
   }
 }

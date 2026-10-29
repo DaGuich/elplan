@@ -1,0 +1,220 @@
+.schematic-view {
+  display: grid;
+  gap: 1rem;
+  color: #172235;
+}
+
+.schematic-view__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.schematic-view__header p,
+.schematic-unknown,
+.schematic-view__empty {
+  color: #526174;
+  font-size: 0.875rem;
+}
+
+.schematic-view__modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.schematic-view__modes button[aria-pressed="true"] {
+  border-color: #166b59;
+  background: #e8f4f0;
+  color: #145a4b;
+}
+
+.schematic-view__warning,
+.schematic-view__issues,
+.schematic-view__status {
+  margin: 0;
+  border: 1px solid #e8c27d;
+  border-radius: 0.65rem;
+  background: #fff8e9;
+  padding: 0.8rem 1rem;
+  color: #68460d;
+  font-size: 0.9rem;
+}
+
+.schematic-view__issues {
+  border-color: #e3a7a7;
+  background: #fff1f1;
+  color: #7c2525;
+}
+
+.schematic-view__status {
+  margin: 0;
+  border-color: #b6c8dc;
+  background: #f0f6fc;
+  color: #334d69;
+}
+
+.schematic-view__issues ul {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.schematic-view__diagram {
+  display: grid;
+  gap: 1rem;
+}
+
+.schematic-group {
+  display: grid;
+  justify-items: start;
+  gap: 0.75rem;
+  border: 1px solid #d5dee8;
+  border-radius: 0.75rem;
+  background: #f8fafc;
+  padding: 1rem;
+}
+
+.schematic-group--disconnected {
+  border-color: #e3a7a7;
+  background: #fffafa;
+}
+
+.schematic-device,
+.schematic-load {
+  display: grid;
+  gap: 0.3rem;
+  border: 1px solid #aebdca;
+  border-radius: 0.55rem;
+  background: #fff;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.875rem;
+}
+
+.schematic-device--protection {
+  border-left: 4px solid #287b69;
+}
+
+.schematic-device--circuit {
+  border-left: 4px solid #4473a0;
+}
+
+.schematic-device--disconnected,
+.schematic-load--missing {
+  border-color: #c94f4f;
+  border-left-width: 4px;
+}
+
+.schematic-symbol-placeholder {
+  display: grid;
+  min-width: 9rem;
+  min-height: 3rem;
+  place-items: center;
+  border: 1px dashed #7b8998;
+  border-radius: 0.3rem;
+  background: repeating-linear-gradient(
+    135deg,
+    #f8fafc,
+    #f8fafc 7px,
+    #eef2f6 7px,
+    #eef2f6 14px
+  );
+  color: #526174;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.schematic-device__kind {
+  color: #596a7d;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.schematic-circuits {
+  display: grid;
+  width: min(100%, 70rem);
+  gap: 0.75rem;
+  margin-left: 1.5rem;
+  border-left: 2px solid #9aabba;
+  padding-left: 1rem;
+}
+
+.schematic-circuit {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+  border-bottom: 1px solid #d9e1e8;
+  padding: 0.5rem 0 0.9rem 0.75rem;
+}
+
+.schematic-loads {
+  display: grid;
+  width: 100%;
+  max-width: 44rem;
+  gap: 0.4rem;
+  margin-left: 1rem;
+  border-left: 2px solid #c0ccd7;
+  padding-left: 0.75rem;
+}
+
+.schematic-load {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+}
+
+.schematic-load--missing {
+  color: #7c2525;
+}
+
+.schematic-load--remote,
+.schematic-load--unresolved {
+  border-style: dashed;
+}
+
+.schematic-poles {
+  display: grid;
+  width: min(100%, 55rem);
+  gap: 0.25rem;
+  margin-left: 1rem;
+  border-left: 2px solid #c0ccd7;
+  padding-left: 0.75rem;
+}
+
+.schematic-pole {
+  display: grid;
+  grid-template-columns: minmax(5rem, 0.25fr) minmax(14rem, 1fr);
+  gap: 0.5rem;
+  border-bottom: 1px dashed #c0ccd7;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.825rem;
+}
+
+.schematic-unknown {
+  margin: 0;
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.schematic-view__empty {
+  margin: 0;
+  border: 1px dashed #aebdca;
+  border-radius: 0.55rem;
+  padding: 1rem;
+}
+
+@media (max-width: 600px) {
+  .schematic-circuits {
+    margin-left: 0.5rem;
+  }
+
+  .schematic-pole {
+    grid-template-columns: 1fr;
+  }
+}

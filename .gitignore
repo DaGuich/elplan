@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local blueprint uploads
+backend/data/
+
+# Frontend dependencies and TypeScript build cache
+node_modules/
+*.tsbuildinfo

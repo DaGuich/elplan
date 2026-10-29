@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BuildingCreate, FloorPlanData, ProjectCreate, Project, projectsApi } from "./api";
+import { BuildingCreate, FloorPlanData, ProjectCreate, Project, ProjectDetails, projectsApi } from "./api";
 
 export function useProjects(includeArchived = false) {
   return useQuery({
@@ -15,10 +15,32 @@ export function useProject(projectId: number) {
   });
 }
 
+export function useProjectDetails(projectId: number) {
+  return useQuery({
+    queryKey: ["projects", projectId, "details"],
+    queryFn: () => projectsApi.details(projectId),
+  });
+}
+
+export function useUpdateProjectDetails(projectId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ProjectDetails) => projectsApi.updateDetails(projectId, payload),
+    onSuccess: (data) => queryClient.setQueryData(["projects", projectId, "details"], data),
+  });
+}
+
 export function useBuildings(projectId: number) {
   return useQuery({
     queryKey: ["projects", projectId, "buildings"],
     queryFn: () => projectsApi.buildings(projectId),
+  });
+}
+
+export function useTopologyPlacements(projectId: number) {
+  return useQuery({
+    queryKey: ["projects", projectId, "topology", "placements"],
+    queryFn: () => projectsApi.topologyPlacements(projectId),
   });
 }
 
@@ -59,6 +81,7 @@ export function useSaveFloorPlan(projectId: number, floorId: number) {
     mutationFn: (payload: FloorPlanData) => projectsApi.saveFloorPlan(projectId, floorId, payload),
     onSuccess: (data) => {
       queryClient.setQueryData(["projects", projectId, "floors", floorId, "plan"], data);
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "topology"] });
     },
   });
 }
